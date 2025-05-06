@@ -23,6 +23,7 @@ models/
 *.pth
 *.h5
 *.onnx
+!outputs/.gitkeep
 
 # ─ Data ─────────────────────────────────────────
 data/
@@ -30,3 +31,4 @@ data/
 *.fits
 *.jpg
 *.png
+!data/.gitkeep  
