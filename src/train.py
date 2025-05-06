@@ -2,7 +2,7 @@
 
 import argparse, tensorflow as tf, os
 from src.datamodule import load_data
-from models      import build_wide_bn
+from src.models      import build_wide_bn
 
 def main(args):
     (Xt,yt),(Xv,yv),(Xte,yte),f = load_data(args.csv)
