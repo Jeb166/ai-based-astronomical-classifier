@@ -66,9 +66,11 @@ def main():
     print('Deep Neural Network')
     print(f'Validation Accuracy: {val_acc:3.5f}')
 
-    model_path = "/content/ai-based-astronomical-classifier/outputs/full_dnn_model.h5"
-    dnn.save(model_path)
-    print(f"Son model kaydedildi: {model_path}")
+
+    now = datetime.now().strftime("%Y%m%d-%H%M%S")
+    keras_path = f"/content/ai-based-astronomical-classifier/outputs/full_dnn_model_{now}.keras"
+    dnn.save(keras_path)
+    print(f"[+] Model kaydedildi: {keras_path}")
 
 if __name__ == '__main__':
     main()
