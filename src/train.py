@@ -1,7 +1,7 @@
 """python -m src.train --csv data/skyserver.csv --epochs 60"""
 
 import argparse, tensorflow as tf, os
-from datamodule import load_data
+from src.datamodule import load_data
 from models      import build_wide_bn
 
 def main(args):
