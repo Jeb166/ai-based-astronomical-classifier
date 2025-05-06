@@ -1,13 +1,15 @@
-# deep learning
-torch>=2.2
-tensorflow==2.15.0    
-pytorch-tabnet     
+# ─ Deep learning ─────────────────────────────────────────────
+# Colab ships CuDNN 9.1, so use the special wheel that matches it
+tensorflow==2.18.0.post1     
 
-# data stack
+# (only keep PyTorch if you really need TabNet or other Torch models)
+torch>=2.2
+pytorch-tabnet               # optional; safe to remove if unused
+
+# ─ Data / ML stack ───────────────────────────────────────────
 pandas>=2.2
 numpy>=1.26
 scikit-learn>=1.4
 matplotlib>=3.8
 seaborn>=0.13
-tqdm               
-
+tqdm
