@@ -1,0 +1,12 @@
+# deep learning
+torch>=2.2
+tensorflow>=2.16   
+pytorch-tabnet     
+
+# data stack
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.4
+matplotlib>=3.8
+seaborn>=0.13
+tqdm               

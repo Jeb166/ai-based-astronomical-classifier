@@ -1,0 +1,32 @@
+# ─ Python artefacts ─────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg-info/
+
+# ─ virtual‑envs ─────────────────────────────────
+.venv/
+env/
+venv/
+
+# ─ OS / editor cruft ────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# ─ ML runs & outputs ────────────────────────────
+outputs/
+models/
+*.pt
+*.pth
+*.h5
+*.onnx
+
+# ─ Data ─────────────────────────────────────────
+data/
+*.csv
+*.fits
+*.jpg
+*.png
