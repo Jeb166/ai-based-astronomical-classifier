@@ -1,12 +1,7 @@
-# ─ Deep learning ─────────────────────────────────────────────
-# Colab ships CuDNN 9.1, so use the special wheel that matches it
-tensorflow==2.18.0.post1     
+# deep learning (works on Colab GPUs with CuDNN 9.1)
+tensorflow==2.15.0.post1
 
-# (only keep PyTorch if you really need TabNet or other Torch models)
-torch>=2.2
-pytorch-tabnet               # optional; safe to remove if unused
-
-# ─ Data / ML stack ───────────────────────────────────────────
+# data / ml stack
 pandas>=2.2
 numpy>=1.26
 scikit-learn>=1.4
