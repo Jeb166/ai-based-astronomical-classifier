@@ -11,7 +11,7 @@ from model import build_model
 
 def main():
     # Path to original CSV in Colab environment
-    filename = '/data/skyserver.csv'
+    filename = '/content/ai-based-astronomical-classifier/data/skyserver.csv'
 
     # Load and prepare data
     X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df = load_and_prepare(filename)
