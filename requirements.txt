@@ -1,6 +1,6 @@
 # deep learning
 torch>=2.2
-tensorflow>=2.16   
+tensorflow==2.15.0    
 pytorch-tabnet     
 
 # data stack
@@ -10,3 +10,4 @@ scikit-learn>=1.4
 matplotlib>=3.8
 seaborn>=0.13
 tqdm               
+
