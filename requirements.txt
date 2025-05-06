@@ -1,10 +1,7 @@
-# deep learning (works on Colab GPUs with CuDNN 9.1)
-tensorflow==2.15.0.post1
-
-# data / ml stack
-pandas>=2.2
-numpy>=1.26
-scikit-learn>=1.4
-matplotlib>=3.8
-seaborn>=0.13
-tqdm
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+keras
+tensorflow
