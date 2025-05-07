@@ -14,6 +14,13 @@ def load_and_prepare(filename: str):
         axis=1
     )
 
+        # --- Color indices (fotometrik farklar) ---
+    sdss_df["u_g"] = sdss_df["u"] - sdss_df["g"]
+    sdss_df["g_r"] = sdss_df["g"] - sdss_df["r"]
+    sdss_df["r_i"] = sdss_df["r"] - sdss_df["i"]
+    sdss_df["i_z"] = sdss_df["i"] - sdss_df["z"]
+
+
     # Partition SDSS data (60% train, 20% validation, 20% test)
     train_count = 60000
     val_count = 20000
