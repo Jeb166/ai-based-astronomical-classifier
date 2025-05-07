@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.metrics import confusion_matrix
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 from prepare_data import load_and_prepare
 from model import build_model
@@ -24,11 +25,19 @@ def main():
 
     # Train DNN
     my_epochs = 50
+
+    callbacks = [
+        EarlyStopping(patience=5, restore_best_weights=True),
+        ReduceLROnPlateau(factor=0.5, patience=3, verbose=1)
+    ]
+
     history = dnn.fit(
         X_train, y_train,
-        epochs=my_epochs,
-        batch_size=50,
-        validation_data=(X_validation, y_validation)
+        epochs=my_epochs,            # EarlyStopping var; 60 yaz, gerekirse erken durur
+        batch_size=64,
+        validation_data=(X_validation, y_validation),
+        callbacks=callbacks,
+        verbose=2
     )
 
     # Evaluate on test set

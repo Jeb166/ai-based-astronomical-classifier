@@ -17,18 +17,25 @@ venv/
 .ipynb_checkpoints/
 
 # ─ ML runs & outputs ────────────────────────────
-outputs/
-models/
+outputs/              
+outputs/**            
+!outputs/             
+!outputs/.gitkeep     
+
+models/               
+
 *.pt
 *.pth
 *.h5
 *.onnx
-!outputs/.gitkeep
 
 # ─ Data ─────────────────────────────────────────
 data/
-*.csv
+data/**               
+!data/                
+!data/.gitkeep        
+
+*.csv                 
 *.fits
 *.jpg
 *.png
-!data/.gitkeep  

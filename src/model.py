@@ -1,27 +1,53 @@
 from keras.models import Sequential
-from keras.layers import Dense, Dropout
+from keras.layers import (
+    Dense,
+    Dropout,
+    BatchNormalization,
+    LeakyReLU
+)
+from keras.regularizers import l2
+
 
 def build_model(input_dim: int, n_classes: int):
-    dnn = Sequential()
-    dnn.add(Dense(9, input_dim=input_dim, activation='relu'))
-    dnn.add(Dropout(0.1))
+    
+    model = Sequential()
 
-    dnn.add(Dense(9, activation='relu'))
-    dnn.add(Dropout(0.1))
-
-    dnn.add(Dense(9, activation='relu'))
-    dnn.add(Dropout(0.05))
-
-    dnn.add(Dense(6, activation='relu'))
-    dnn.add(Dropout(0.05))
-
-    dnn.add(Dense(6, activation='relu'))
-    dnn.add(Dense(6, activation='relu'))
-
-    dnn.add(Dense(n_classes, activation='softmax', name='output'))
-    dnn.compile(
-        loss='categorical_crossentropy',
-        optimizer='adam',
-        metrics=['categorical_accuracy']
+    model.add(
+        Dense(
+            128,
+            input_dim=input_dim,
+            kernel_regularizer=l2(1e-4)
+        )
     )
-    return dnn
+    model.add(LeakyReLU(alpha=0.05))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.3))
+
+    model.add(
+        Dense(
+            64,
+            kernel_regularizer=l2(1e-4)
+        )
+    )
+    model.add(LeakyReLU(alpha=0.05))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.3))
+
+    model.add(
+        Dense(
+            32,
+            kernel_regularizer=l2(1e-4)
+        )
+    )
+    model.add(LeakyReLU(alpha=0.05))
+    model.add(BatchNormalization())
+    model.add(Dropout(0.2))
+
+    model.add(Dense(n_classes, activation="softmax", name="output"))
+
+    model.compile(
+        optimizer="adam",
+        loss="categorical_crossentropy",
+        metrics=["categorical_accuracy"],
+    )
+    return model
