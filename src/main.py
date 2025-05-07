@@ -82,7 +82,7 @@ def main():
 
     model_path = "/content/ai-based-astronomical-classifier/outputs/full_dnn_model.keras"
     dnn.save(model_path)
-    print(f"Son model kaydedildi: {model_path}")
+    print(f"Last model saved: {model_path}")
 
 if __name__ == '__main__':
     main()
