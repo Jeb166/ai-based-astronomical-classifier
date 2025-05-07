@@ -56,6 +56,8 @@ def main():
         xticklabels=labels, yticklabels=labels
     )
     plt.title('Confusion Matrix')
+    plt.tight_layout()
+    plt.savefig('/content/ai-based-astronomical-classifier/outputs/confusion.png', dpi=150)
     plt.show()
 
     # Plot training vs validation accuracy
@@ -67,8 +69,9 @@ def main():
     plt.ylabel('Accuracy')
     plt.title('Model accuracy')
     plt.legend()
-    plt.show()
+    plt.tight_layout()
     plt.savefig('/content/ai-based-astronomical-classifier/outputs/accuracy.png', dpi=150)
+    plt.show()
 
     # Validation set performance
     preds_val = pd.DataFrame(dnn.predict(X_validation)).idxmax(axis=1)
