@@ -37,7 +37,7 @@ def main():
         batch_size=64,
         validation_data=(X_validation, y_validation),
         callbacks=callbacks,
-        verbose=2
+        verbose=1
     )
 
     # Evaluate on test set
@@ -59,7 +59,8 @@ def main():
     plt.show()
 
     # Plot training vs validation accuracy
-    epochs_arr = range(1, my_epochs + 1)
+    history_len = len(history.history['categorical_accuracy'])
+    epochs_arr = range(1, history_len + 1)
     plt.plot(epochs_arr, history.history['categorical_accuracy'], 'r-', label='training accuracy')
     plt.plot(epochs_arr, history.history['val_categorical_accuracy'], 'b-', label='validation accuracy')
     plt.xlabel('Epochs')
@@ -67,6 +68,7 @@ def main():
     plt.title('Model accuracy')
     plt.legend()
     plt.show()
+    plt.savefig('/content/ai-based-astronomical-classifier/outputs/accuracy.png', dpi=150)
 
     # Validation set performance
     preds_val = pd.DataFrame(dnn.predict(X_validation)).idxmax(axis=1)
