@@ -63,8 +63,8 @@ def main():
     # Plot training vs validation accuracy
     history_len = len(history.history['categorical_accuracy'])
     epochs_arr = range(1, history_len + 1)
-    plt.plot(epochs_arr, history.history['categorical_accuracy'], 'r-', label='training accuracy')
-    plt.plot(epochs_arr, history.history['val_categorical_accuracy'], 'b-', label='validation accuracy')
+    plt.plot(epochs_arr, history.history['categorical_accuracy'], 'r-', label='Training Accuracy')
+    plt.plot(epochs_arr, history.history['val_categorical_accuracy'], 'b-', label='Validation Accuracy')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy')
     plt.title('Model accuracy')
