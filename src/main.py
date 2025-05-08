@@ -1,10 +1,12 @@
+# main.py — DNN + Random Forest with validation‑weighted ensemble
+
 import os
 import joblib
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
@@ -13,26 +15,27 @@ from model import build_model
 
 
 def main():
-    # ---------------------------------------------------------------------
-    # 0) Dosya yolları ve klasör hazırlığı
-    # ---------------------------------------------------------------------
-    data_path = 'data/skyserver.csv'  # proje kökünden göreceli
+    # ------------------------------------------------------------------
+    # 0) Yol ve klasör
+    # ------------------------------------------------------------------
+    data_path = 'data/skyserver.csv'
     out_dir   = 'outputs'
     os.makedirs(out_dir, exist_ok=True)
 
-    # ---------------------------------------------------------------------
-    # 1) Veri yükle & ölçekle & one‑hot etiketle
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 1) Veri hazırla
+    # ------------------------------------------------------------------
     X_train, X_val, X_test, y_train, y_val, y_test, df_full = \
         load_and_prepare(data_path)
 
+    # Etiketleri argmax formatına çevir
     y_train_lbl = y_train.argmax(1)
     y_val_lbl   = y_val.argmax(1)
     y_test_lbl  = y_test.argmax(1)
 
-    # ---------------------------------------------------------------------
-    # 2) Derin Sinir Ağı
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 2) DNN modeli
+    # ------------------------------------------------------------------
     dnn = build_model(X_train.shape[1], y_train.shape[1])
     callbacks = [
         EarlyStopping(patience=5, restore_best_weights=True),
@@ -47,9 +50,9 @@ def main():
         verbose=1
     )
 
-    # ---------------------------------------------------------------------
-    # 3) Random Forest (CPU) eğitimi
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 3) Random Forest modeli
+    # ------------------------------------------------------------------
     rf = RandomForestClassifier(
         n_estimators=500,
         class_weight='balanced',
@@ -60,44 +63,58 @@ def main():
     rf.fit(X_train, y_train_lbl)
     print(f"RF OOB accuracy: {rf.oob_score_:.4f}")
 
-    # ---------------------------------------------------------------------
-    # 4) Test kümesinde DNN, RF ve Ensemble karşılaştırması
-    # ---------------------------------------------------------------------
-    dnn_probs = dnn.predict(X_test)          # (n, 3)
-    rf_probs  = rf.predict_proba(X_test)     # (n, 3)
+    # ------------------------------------------------------------------
+    # 4) Validation set üzerinde en iyi ağırlığı bul
+    # ------------------------------------------------------------------
+    dnn_val_probs = dnn.predict(X_val)
+    rf_val_probs  = rf.predict_proba(X_val)
 
-    # Eşit ağırlıklı yumuşak oylama
-    ens_probs = (dnn_probs + rf_probs) / 2.0
+    best_w, best_acc = 0.5, 0.0
+    for w in np.linspace(0.1, 0.9, 9):
+        blended = w * dnn_val_probs + (1 - w) * rf_val_probs
+        acc = (blended.argmax(1) == y_val_lbl).mean()
+        if acc > best_acc:
+            best_w, best_acc = w, acc
+
+    print(f"[Val] Best DNN weight: {best_w:.2f}  (val acc={best_acc*100:.2f}%)")
+
+    # ------------------------------------------------------------------
+    # 5) Test kümesinde DNN, RF ve Ensemble karşılaştırması
+    # ------------------------------------------------------------------
+    dnn_probs = dnn.predict(X_test)
+    rf_probs  = rf.predict_proba(X_test)
+
     dnn_pred  = dnn_probs.argmax(1)
     rf_pred   = rf_probs.argmax(1)
+
+    # Val‑tabanlı ağırlık
+    ens_probs = best_w * dnn_probs + (1 - best_w) * rf_probs
     ens_pred  = ens_probs.argmax(1)
 
-    acc_dnn = (dnn_pred == y_test_lbl).mean()*100
-    acc_rf  = (rf_pred  == y_test_lbl).mean()*100
-    acc_ens = (ens_pred == y_test_lbl).mean()*100
+    acc_dnn = (dnn_pred == y_test_lbl).mean() * 100
+    acc_rf  = (rf_pred  == y_test_lbl).mean() * 100
+    acc_ens = (ens_pred == y_test_lbl).mean() * 100
 
     print(f"DNN  Test Accuracy : {acc_dnn:6.3f}%")
     print(f"RF   Test Accuracy : {acc_rf :6.3f}%")
-    print(f"ENS  Test Accuracy : {acc_ens:6.3f}%  <-- En iyi")
+    print(f"BEST‑W ENS Accuracy : {acc_ens:6.3f}%  <-- rapor")
 
-    # ---------------------------------------------------------------------
-    # 5) Confusion matrix (ensemble)
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 6) Confusion matrix (ensemble)
+    # ------------------------------------------------------------------
     labels = np.unique(df_full['class'])
     cm = confusion_matrix(y_test_lbl, ens_pred)
     plt.figure(figsize=(5,4))
     sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels)
-    plt.title('Confusion Matrix — Ensemble')
+    plt.title('Confusion Matrix — Best‑W Ensemble')
     plt.tight_layout()
-    plt.savefig(f"{out_dir}/confusion_ens.png", dpi=150)
+    plt.savefig(f"{out_dir}/confusion_ens_bestw.png", dpi=150)
     plt.show()
 
-    # ---------------------------------------------------------------------
-    # 6) Eğitim doğruluk eğrileri (DNN)
-    # ---------------------------------------------------------------------
-    hist_len = len(history.history['categorical_accuracy'])
-    epochs_arr = range(1, hist_len + 1)
-
+    # ------------------------------------------------------------------
+    # 7) DNN eğitim eğrisi
+    # ------------------------------------------------------------------
+    epochs_arr = range(1, len(history.history['categorical_accuracy']) + 1)
     fig, ax = plt.subplots(figsize=(6,4))
     ax.plot(epochs_arr, history.history['categorical_accuracy'], 'r-', label='Training')
     ax.plot(epochs_arr, history.history['val_categorical_accuracy'], 'b-', label='Validation')
@@ -106,12 +123,12 @@ def main():
     fig.savefig(f"{out_dir}/accuracy_dnn.png", dpi=150)
     plt.show()
 
-    # ---------------------------------------------------------------------
-    # 7) Modelleri kaydet
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 8) Modelleri kaydet
+    # ------------------------------------------------------------------
     dnn.save(f"{out_dir}/dnn_model.keras")
     joblib.dump(rf, f"{out_dir}/rf_model.joblib")
-    print("[+] Modeller kaydedildi → outputs/")
+    print("[+] Models are saved → outputs/")
 
 
 if __name__ == '__main__':
