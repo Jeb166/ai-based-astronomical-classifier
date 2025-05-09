@@ -12,6 +12,8 @@ from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 from prepare_data import load_and_prepare
 from model import build_model
+from prepare_data import load_and_prepare, load_star_subset
+from star_model import build_star_model
 
 
 def main():
@@ -19,6 +21,7 @@ def main():
     # 0) Yol ve klasör
     # ------------------------------------------------------------------
     data_path = 'data/skyserver.csv'
+    data_path_star = 'data/star_subtypes.csv'
     out_dir   = 'outputs'
     os.makedirs(out_dir, exist_ok=True)
 
@@ -130,6 +133,49 @@ def main():
     joblib.dump(rf, f"{out_dir}/rf_model.joblib")
     print("[+] Models are saved → outputs/")
 
+    # ------------------ STAR SUBCLASS MODEL --------------------------
+    X_s_tr, X_s_val, X_s_te, y_s_tr, y_s_val, y_s_te, le_star, scaler_star = \
+        load_star_subset(data_path_star)
+
+    star_net = build_star_model(X_s_tr.shape[1], y_s_tr.shape[1])
+    hist_star = star_net.fit(
+        X_s_tr, y_s_tr,
+        epochs=30,
+        batch_size=64,
+        validation_data=(X_s_val, y_s_val),
+        verbose=1
+    )
+    star_acc = (star_net.predict(X_s_te).argmax(1) ==
+                y_s_te.argmax(1)).mean()*100
+    print(f"STAR subtype Test Acc: {star_acc:.2f}%")
+
+    # Kaydet
+    star_net.save(f"{out_dir}/star_model.keras")
+    joblib.dump(le_star,  f"{out_dir}/star_label_enc.joblib")
+    joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
+
+    def full_predict(sample_array):
+    """
+    sample_array : shape (n_samples, feature_dim)  scaled with the SAME scaler
+    returns primary label or star subtype
+    """
+    # 1) Ensemble ile galaxy/qso/star
+    p_dnn = dnn.predict(sample_array)
+    p_rf  = rf.predict_proba(sample_array)
+    p_ens = best_w * p_dnn + (1 - best_w) * p_rf
+    primary = p_ens.argmax(1)
+
+    STAR_ID = np.where(labels == "STAR")[0][0]   # genelde 2
+    output = []
+    for i, cls in enumerate(primary):
+        if cls == STAR_ID:
+            x_star = scaler_star.transform(sample_array[i:i+1])
+            sub_id = star_net.predict(x_star).argmax(1)[0]
+            sub_lbl = le_star.inverse_transform([sub_id])[0]
+            output.append(f"STAR-{sub_lbl}")
+        else:
+            output.append(labels[cls])
+    return output
 
 if __name__ == '__main__':
     main()

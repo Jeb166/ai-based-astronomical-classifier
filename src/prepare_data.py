@@ -53,3 +53,35 @@ def load_and_prepare(filename: str):
     X_test = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
 
     return X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df
+
+def load_star_subset(filename: str):
+    df = pd.read_csv(filename, encoding='utf-8')
+    star_df = df[df["class"] == "STAR"].copy()
+
+    star_df = star_df.dropna(subset=["subClass"])      # bozukları at
+
+    y = star_df["subClass"]
+    X = star_df.drop(["class", "subClass", "objid",
+                      "specobjid", "run", "rerun",
+                      "camcol", "field"], axis=1)
+
+    # split: 70% train, 15% val, 15% test
+    from sklearn.model_selection import train_test_split
+    X_train, X_tmp, y_train, y_tmp = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y)
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_tmp, y_tmp, test_size=0.5, random_state=42, stratify=y_tmp)
+
+    scaler = StandardScaler().fit(X_train)
+    X_train = scaler.transform(X_train)
+    X_val   = scaler.transform(X_val)
+    X_test  = scaler.transform(X_test)
+
+    le = LabelEncoder().fit(y_train)
+    y_train_oh = to_categorical(le.transform(y_train))
+    y_val_oh   = to_categorical(le.transform(y_val))
+    y_test_oh  = to_categorical(le.transform(y_test))
+
+    return (X_train, X_val, X_test,
+            y_train_oh, y_val_oh, y_test_oh,
+            le, scaler)
