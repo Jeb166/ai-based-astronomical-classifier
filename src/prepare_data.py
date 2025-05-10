@@ -60,6 +60,11 @@ def load_star_subset(filename: str):
 
     star_df = star_df.dropna(subset=["subClass"])      # bozukları at
 
+    # ... star_df tanımlandıktan hemen sonra
+    counts = star_df["subClass"].value_counts()
+    rare_mask = counts < 5          # eşik: en az 5 örnek
+    star_df = star_df[~star_df["subClass"].isin(counts[rare_mask].index)]
+
     y = star_df["subClass"]
     X = star_df.drop(["class", "subClass", "objid",
                       "specobjid", "run", "rerun",
