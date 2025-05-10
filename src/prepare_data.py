@@ -60,10 +60,13 @@ def load_star_subset(filename: str):
 
     star_df = star_df.dropna(subset=["subClass"])      # bozukları at
 
-    # ... star_df tanımlandıktan hemen sonra
-    counts = star_df["subClass"].value_counts()
-    rare_mask = counts < 5          # eşik: en az 5 örnek
-    star_df = star_df[~star_df["subClass"].isin(counts[rare_mask].index)]
+    # ----- 1)  EN AZ 5 ÖRNEĞİ OLAN alt‑türler kalsın  -----------------
+    cnt = star_df["subClass"].value_counts()
+    star_df = star_df[star_df["subClass"].isin(cnt[cnt >= 5].index)]
+
+    print("Alt‑tür frekansları (>=5 tutuldu):")
+    print(star_df["subClass"].value_counts().head(20))
+
 
     y = star_df["subClass"]
     X = star_df.drop(["class", "subClass", "objid",
@@ -72,10 +75,14 @@ def load_star_subset(filename: str):
 
     # split: 70% train, 15% val, 15% test
     from sklearn.model_selection import train_test_split
+    # ---------- 2)  TEK stratify'lı bölme -----------------------------
     X_train, X_tmp, y_train, y_tmp = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y)
+        X, y, test_size=0.30, random_state=42, stratify=y)   # stratify = y  ✓
+
+    # ikinci bölmede stratify KAPALI  →  nadir sınıflar 0 hatası yok
     X_val, X_test, y_val, y_test = train_test_split(
-        X_tmp, y_tmp, test_size=0.5, random_state=42, stratify=y_tmp)
+        X_tmp, y_tmp, test_size=0.50, random_state=42, stratify=None)
+
 
     scaler = StandardScaler().fit(X_train)
     X_train = scaler.transform(X_train)
