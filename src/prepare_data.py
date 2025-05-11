@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from keras.utils import to_categorical
+from imblearn.over_sampling import SMOTE
 
 def load_and_prepare(filename: str):
     # Read and shuffle data
@@ -94,6 +95,19 @@ def load_star_subset(filename: str):
     # ------------------------------------------------------------------
     for a, b in [("u", "g"), ("g", "r"), ("r", "i"), ("i", "z")]:
         star_df[f"{a}_{b}"] = star_df[a] - star_df[b]
+    
+    # 3.5) GELİŞMİŞ ÖZELLİK MÜHENDİSLİĞİ
+    # Renk oranları (astronomide önemli)
+    star_df['u_over_g'] = star_df['u'] / star_df['g']
+    star_df['g_over_r'] = star_df['g'] / star_df['r']
+    star_df['r_over_i'] = star_df['r'] / star_df['i']
+    star_df['i_over_z'] = star_df['i'] / star_df['z']
+    
+    # Polinom özellikler (ikinci dereceden etkileşimler)
+    star_df['u_g_squared'] = star_df['u_g'] ** 2
+    star_df['g_r_squared'] = star_df['g_r'] ** 2
+    star_df['r_i_squared'] = star_df['r_i'] ** 2
+    star_df['i_z_squared'] = star_df['i_z'] ** 2
 
     # ------------------------------------------------------------------
     # 4)  Özellik / etiket ayrımı ve split
@@ -127,7 +141,12 @@ def load_star_subset(filename: str):
     y_val_oh   = to_categorical(le.transform(y_val))
     y_test_oh  = to_categorical(le.transform(y_test))
 
-    return (X_train, X_val, X_test,
-            y_train_oh, y_val_oh, y_test_oh,
+    # SMOTE'yi yalnızca eğitim setine uygula
+    smote = SMOTE(random_state=42)
+    X_train_res, y_train_res = smote.fit_resample(X_train, le.transform(y_train))
+    y_train_res_oh = to_categorical(y_train_res)
+
+    return (X_train_res, X_val, X_test,
+            y_train_res_oh, y_val_oh, y_test_oh,
             le, scaler)
 

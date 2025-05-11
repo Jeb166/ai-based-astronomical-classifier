@@ -110,10 +110,14 @@ def main():
     cw_dict = dict(enumerate(cw))
     star_net.fit(
         Xs_tr, ys_tr,
-        epochs=40,                # 30 → 40; istersen bırak
-        batch_size=64,
+        epochs=100,  # Daha fazla epoch
+        batch_size=32,  # Daha küçük batch size
         validation_data=(Xs_val, ys_val),
-        class_weight=cw_dict,     #  <--  eklendi
+        class_weight=cw_dict,
+        callbacks=[
+            EarlyStopping(patience=10, restore_best_weights=True),
+            ReduceLROnPlateau(factor=0.5, patience=5, verbose=1)
+        ],
         verbose=1
     )
     star_acc = (star_net.predict(Xs_te).argmax(1)==ys_te.argmax(1)).mean()*100
