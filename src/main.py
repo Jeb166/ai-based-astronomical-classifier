@@ -107,7 +107,8 @@ def main():
     star_net = build_star_model(Xs_tr.shape[1], ys_tr.shape[1])
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-    cw_dict = dict(enumerate(cw))    star_net.fit(
+    cw_dict = dict(enumerate(cw))    
+    star_net.fit(
         Xs_tr, ys_tr,
         epochs=100,  # Daha fazla epoch
         batch_size=32,  # Daha küçük batch size
