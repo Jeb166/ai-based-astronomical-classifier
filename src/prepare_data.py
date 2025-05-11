@@ -55,35 +55,68 @@ def load_and_prepare(filename: str):
     return X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df
 
 def load_star_subset(filename: str):
-    df = pd.read_csv(filename, encoding='utf-8')
-    star_df = df[df["class"] == "STAR"].copy()
-
-    star_df = star_df.dropna(subset=["subClass"])      # bozukları at
-
-    # ----- 1)  EN AZ 5 ÖRNEĞİ OLAN alt‑türler kalsın  -----------------
-    cnt = star_df["subClass"].value_counts()
-    star_df = star_df[star_df["subClass"].isin(cnt[cnt >= 5].index)]
-
-    print("Alt‑tür frekansları (>=5 tutuldu):")
-    print(star_df["subClass"].value_counts().head(20))
-
-
-    y = star_df["subClass"]
-    X = star_df.drop(["class", "subClass", "objid",
-                      "specobjid", "run", "rerun",
-                      "camcol", "field"], axis=1)
-
-    # split: 70% train, 15% val, 15% test
+    import pandas as pd
     from sklearn.model_selection import train_test_split
-    # ---------- 2)  TEK stratify'lı bölme -----------------------------
+    from sklearn.preprocessing import StandardScaler, LabelEncoder
+    from keras.utils import to_categorical
+
+    # ------------------------------------------------------------------
+    # 0) CSV oku  – sadece STAR kayıtları
+    # ------------------------------------------------------------------
+    df = pd.read_csv(filename, encoding="utf-8")
+    star_df = df[df["class"] == "STAR"].copy()
+    star_df = star_df.dropna(subset=["subClass"])
+
+    # ------------------------------------------------------------------
+    # 1)  Alt‑türü 7 ana gruba indir (OB, A, F, G, K, M, WD)
+    # ------------------------------------------------------------------
+    def coarse_sub(sc: str) -> str:
+        sc = sc.upper()
+        if sc.startswith(("O", "B")):   return "OB"
+        if sc.startswith("A"):          return "A"
+        if sc.startswith("F"):          return "F"
+        if sc.startswith("G"):          return "G"
+        if sc.startswith("K"):          return "K"
+        if sc.startswith("M"):          return "M"
+        return "WD"                     # beyaz‑cüce ve diğerleri
+
+    star_df["subClass"] = star_df["subClass"].apply(coarse_sub)
+
+    # ------------------------------------------------------------------
+    # 2)  EN AZ 100 örneği olan sınıfları tut
+    # ------------------------------------------------------------------
+    cnt = star_df["subClass"].value_counts()
+    star_df = star_df[star_df["subClass"].isin(cnt[cnt >= 100].index)]
+    print("Kalan alt‑türler:\n", star_df["subClass"].value_counts())
+
+    # ------------------------------------------------------------------
+    # 3)  Renk indeksleri ekle (u‑g, g‑r, r‑i, i‑z)
+    # ------------------------------------------------------------------
+    for a, b in [("u", "g"), ("g", "r"), ("r", "i"), ("i", "z")]:
+        star_df[f"{a}_{b}"] = star_df[a] - star_df[b]
+
+    # ------------------------------------------------------------------
+    # 4)  Özellik / etiket ayrımı ve split
+    # ------------------------------------------------------------------
+    y = star_df["subClass"]
+    X = star_df.drop(
+        ["class", "subClass", "objid", "specobjid",
+         "run", "rerun", "camcol", "field"],
+        axis=1
+    )
+
+    #   70 % train  – 30 % geçici (val+test)  (stratify=y)
     X_train, X_tmp, y_train, y_tmp = train_test_split(
-        X, y, test_size=0.30, random_state=42, stratify=y)   # stratify = y  ✓
-
-    # ikinci bölmede stratify KAPALI  →  nadir sınıflar 0 hatası yok
+        X, y, test_size=0.30, random_state=42, stratify=y
+    )
+    #   15 % val – 15 % test  (stratify KAPALI → “1 örnek” hatası yok)
     X_val, X_test, y_val, y_test = train_test_split(
-        X_tmp, y_tmp, test_size=0.50, random_state=42, stratify=None)
+        X_tmp, y_tmp, test_size=0.50, random_state=42, stratify=None
+    )
 
-
+    # ------------------------------------------------------------------
+    # 5)  Ölçekle & one‑hot
+    # ------------------------------------------------------------------
     scaler = StandardScaler().fit(X_train)
     X_train = scaler.transform(X_train)
     X_val   = scaler.transform(X_val)
@@ -97,3 +130,4 @@ def load_star_subset(filename: str):
     return (X_train, X_val, X_test,
             y_train_oh, y_val_oh, y_test_oh,
             le, scaler)
+

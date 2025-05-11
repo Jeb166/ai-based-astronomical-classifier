@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
+from sklearn.utils import class_weight
 from sklearn.ensemble import RandomForestClassifier
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
@@ -104,8 +105,17 @@ def main():
     # ------------------------------------------------------------------
     Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
     star_net = build_star_model(Xs_tr.shape[1], ys_tr.shape[1])
-    star_net.fit(Xs_tr, ys_tr, epochs=30, batch_size=64,
-                 validation_data=(Xs_val, ys_val), verbose=1)
+    y_int = ys_tr.argmax(1)
+    cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
+    cw_dict = dict(enumerate(cw))
+    star_net.fit(
+        Xs_tr, ys_tr,
+        epochs=40,                # 30 → 40; istersen bırak
+        batch_size=64,
+        validation_data=(Xs_val, ys_val),
+        class_weight=cw_dict,     #  <--  eklendi
+        verbose=1
+    )
     star_acc = (star_net.predict(Xs_te).argmax(1)==ys_te.argmax(1)).mean()*100
     print(f"STAR subtype Test Acc: {star_acc:.2f}%")
     star_net.save(f"{out_dir}/star_model.keras")

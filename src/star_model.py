@@ -1,16 +1,15 @@
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, BatchNormalization, LeakyReLU
+from keras.layers import Dense, Dropout, BatchNormalization, Input
 
 def build_star_model(input_dim: int, n_classes: int):
     model = Sequential([
-        Dense(64, input_shape=(input_dim,)),
-        LeakyReLU(alpha=0.05),
+        Input(shape=(input_dim,)),
+        Dense(256, activation='relu'),
         BatchNormalization(),
         Dropout(0.3),
-        Dense(32),
-        LeakyReLU(alpha=0.05),
+        Dense(128, activation='relu'),
         BatchNormalization(),
-        Dropout(0.2),
+        Dropout(0.3),
         Dense(n_classes, activation='softmax')
     ])
     model.compile(
