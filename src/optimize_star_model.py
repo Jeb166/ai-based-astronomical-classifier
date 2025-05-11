@@ -1,14 +1,14 @@
 import numpy as np
 from sklearn.model_selection import RandomizedSearchCV
-from keras.wrappers.scikit_learn import KerasClassifier
+from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from prepare_data import load_star_subset
 
 def create_model(neurons1=256, neurons2=128, neurons3=64, dropout1=0.4, dropout2=0.4, 
                 dropout3=0.3, learning_rate=0.001, activation='relu'):
-    from keras.models import Sequential
-    from keras.layers import Dense, Dropout, BatchNormalization, Input
-    from keras.regularizers import l2
-    from keras.optimizers import Adam
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
+    from tensorflow.keras.regularizers import l2
+    from tensorflow.keras.optimizers import Adam
     
     model = Sequential([
         Input(shape=(n_features,)),
