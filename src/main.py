@@ -107,16 +107,25 @@ def main():
     star_net = build_star_model(Xs_tr.shape[1], ys_tr.shape[1])
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-    cw_dict = dict(enumerate(cw))    
+    cw_dict = dict(enumerate(cw))      # Eğitimi hızlandırmak için veri azaltma (isteğe bağlı)
+    max_samples = 50000  # Her sınıftan en fazla örnek sayısı
+    if len(Xs_tr) > max_samples:
+        print(f"Eğitim veri setini {max_samples} örneğe küçültüyorum...")
+        idx = np.random.choice(len(Xs_tr), max_samples, replace=False)
+        Xs_tr_sample = Xs_tr[idx]
+        ys_tr_sample = ys_tr[idx]
+    else:
+        Xs_tr_sample, ys_tr_sample = Xs_tr, ys_tr
+    
     star_net.fit(
-        Xs_tr, ys_tr,
-        epochs=100,  # Daha fazla epoch
-        batch_size=32,  # Daha küçük batch size
+        Xs_tr_sample, ys_tr_sample,
+        epochs=30,  # Daha az epoch
+        batch_size=64,  # Daha büyük batch size ile hızlandırma
         validation_data=(Xs_val, ys_val),
         class_weight=cw_dict,
         callbacks=[
-            EarlyStopping(patience=15, restore_best_weights=True),  # Daha fazla patience
-            ReduceLROnPlateau(factor=0.3, patience=8, min_lr=1e-6, verbose=1)  # Daha agresif LR azaltma
+            EarlyStopping(patience=5, restore_best_weights=True),  # Daha az bekleme
+            ReduceLROnPlateau(factor=0.5, patience=3, min_lr=1e-6, verbose=1)  # Daha hızlı LR azaltma
         ],
         verbose=1
     )
