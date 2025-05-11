@@ -98,39 +98,36 @@ def main():
     # 6) SAVE GAL/QSO/STAR MODELS
     # ------------------------------------------------------------------
     dnn.save(f"{out_dir}/dnn_model.keras")
-    joblib.dump(rf, f"{out_dir}/rf_model.joblib")
-
-    # ------------------------------------------------------------------
+    joblib.dump(rf, f"{out_dir}/rf_model.joblib")    # ------------------------------------------------------------------
     # 7) STAR SUB‑CLASS MODEL
     # ------------------------------------------------------------------
     Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
-    star_net = build_star_model(Xs_tr.shape[1], ys_tr.shape[1])
+    # Hafif ve daha hızlı eğitilebilen bir model kullan
+    from star_model import build_star_model, train_star_model
+    
+    # Sınıf ağırlıklarını hesapla
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-    cw_dict = dict(enumerate(cw))      # Eğitimi hızlandırmak için veri azaltma (isteğe bağlı)
-    max_samples = 50000  # Her sınıftan en fazla örnek sayısı
-    if len(Xs_tr) > max_samples:
-        print(f"Eğitim veri setini {max_samples} örneğe küçültüyorum...")
-        idx = np.random.choice(len(Xs_tr), max_samples, replace=False)
-        Xs_tr_sample = Xs_tr[idx]
-        ys_tr_sample = ys_tr[idx]
-    else:
-        Xs_tr_sample, ys_tr_sample = Xs_tr, ys_tr
+    cw_dict = dict(enumerate(cw))
     
-    star_net.fit(
-        Xs_tr_sample, ys_tr_sample,
-        epochs=30,  # Daha az epoch
-        batch_size=64,  # Daha büyük batch size ile hızlandırma
-        validation_data=(Xs_val, ys_val),
-        class_weight=cw_dict,
-        callbacks=[
-            EarlyStopping(patience=5, restore_best_weights=True),  # Daha az bekleme
-            ReduceLROnPlateau(factor=0.5, patience=3, min_lr=1e-6, verbose=1)  # Daha hızlı LR azaltma
-        ],
-        verbose=1
+    # Hafif model oluştur (lightweight=True parametresi ile)
+    star_net = build_star_model(Xs_tr.shape[1], ys_tr.shape[1], lightweight=True)
+    
+    # Hızlı eğitim fonksiyonunu kullan
+    print("STAR subtype modeli eğitiliyor (hızlandırılmış)...")
+    star_net, history = train_star_model(
+        star_net, 
+        Xs_tr, ys_tr,
+        Xs_val, ys_val,
+        class_weights=cw_dict,
+        max_samples=30000  # Daha az örnek kullan
     )
+    
+    # Test doğruluğunu değerlendir
     star_acc = (star_net.predict(Xs_te).argmax(1)==ys_te.argmax(1)).mean()*100
     print(f"STAR subtype Test Acc: {star_acc:.2f}%")
+    
+    # Modeli kaydet
     star_net.save(f"{out_dir}/star_model.keras")
     joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
     joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
