@@ -114,19 +114,18 @@ def check_and_download_data(data_dir='data'):
     """
     # Veri dizinini oluştur
     os.makedirs(data_dir, exist_ok=True)
-    
-    # İndirilecek dosyaların listesi (URL'ler ve hedef dosya adları)
+      # İndirilecek dosyaların listesi (URL'ler ve hedef dosya adları)
     files_to_download = {
         # Örnek: Google Drive linki
         'skyserver.csv': {
             'type': 'gdrive',
-            'id': '1OFfnB67KsLGk7YVK76l8Cx7FYMxLxW3m',  # Bu örnek bir ID
-            'backup_url': 'https://drive.google.com/uc?export=download&id=1OFfnB67KsLGk7YVK76l8Cx7FYMxLxW3m'
+            'id': '1DeOt59I6usxGFh2Tm4eBzZi3148p5CUj',  # Gerçek Drive ID'si
+            'backup_url': 'https://drive.google.com/uc?export=download&id=1DeOt59I6usxGFh2Tm4eBzZi3148p5CUj'
         },
         'star_subtypes.csv': {
             'type': 'gdrive',
-            'id': '12JCzjlHREYnxDRo_a9dIiK-qBnV4lC2w',  # Bu örnek bir ID
-            'backup_url': 'https://drive.google.com/uc?export=download&id=12JCzjlHREYnxDRo_a9dIiK-qBnV4lC2w'
+            'id': '1H6DWrepHH36ErofbHRv0BzB8L4EaGb2i',  # Gerçek Drive ID'si
+            'backup_url': 'https://drive.google.com/uc?export=download&id=1H6DWrepHH36ErofbHRv0BzB8L4EaGb2i'
         }
         # Daha fazla dosya eklenebilir
     }
