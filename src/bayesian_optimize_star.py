@@ -60,8 +60,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         Integer(64, 256, name='batch_size')
     ]
     
-    # Optimizasyon için objektif fonksiyon
-    @use_named_args(param_space)
+    # Optimizasyon için objektif fonksiyon    @use_named_args(param_space)
     def objective(**params):
         """
         Her hiperparametre seti için modeli eğitir ve doğrulama doğruluğunu döndürür.
@@ -69,6 +68,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         """
         print(f"\nParametreleri değerlendiriyorum: {params}")
         
+        # batch_size parametresini model oluşturma fonksiyonuna geçirmiyoruz
         model = build_star_model(
             input_dim=n_features, 
             n_classes=n_classes,
@@ -128,13 +128,14 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     print("\nEn iyi parametreler:")
     for param, value in best_params.items():
         print(f"{param}: {value}")
-    
-    # En iyi modeli eğit (tam verilerle)
+      # En iyi modeli eğit (tam verilerle)
     print("\nEn iyi model tam verilerle eğitiliyor...")
+    # batch_size parametresini build_star_model fonksiyonu için çıkarıyoruz
+    model_params = {k: v for k, v in best_params.items() if k != 'batch_size'}
     best_model = build_star_model(
         input_dim=n_features, 
         n_classes=n_classes,
-        **best_params
+        **model_params
     )
     
     best_model, _ = train_star_model(
