@@ -213,8 +213,7 @@ def main():
     sorted_by_time = sorted(results, key=lambda x: x['time'])
     fastest_model = sorted_by_time[0]
     print(f"En hızlı eğitim: {fastest_model['name']} "
-          f"({fastest_model['time']:.2f} saniye)")
-      # C) Seçilen modeli tam veri üzerinde eğit
+          f"({fastest_model['time']:.2f} saniye)")    # C) Seçilen modeli tam veri üzerinde eğit
     print("\nSEÇİLEN MODELİ GERÇEK VERİLERDE EĞİTME")
     print("-" * 40)
     
@@ -223,17 +222,17 @@ def main():
         result['speed_score'] = (result['accuracy'] / 
                                 (result['time'] / min(r['time'] for r in results)))
     
-    # En iyi modeli seç (doğruluk öncelikli)
-    best_model = max(results, key=lambda x: x['accuracy'])
+    # En iyi modeli seç (doğruluk öncelikli) - Standart modeli seçiyoruz
+    best_model = next((r for r in results if r['type'] == 'standard'), results[0])
     print(f"Seçilen model: {best_model['name']} "
           f"(Doğruluk: {best_model['accuracy']:.2f}%, "
           f"Hız skoru: {best_model['speed_score']:.2f})")
     
     # Ana modeli oluştur ve eğit
-    print(f"\nSeçilen model tam veri üzerinde eğitiliyor ({best_model['type']})...")
+    print(f"\nStandart model tam veri üzerinde eğitiliyor...")
     star_net = build_star_model(
         n_features, n_classes,
-        model_type=best_model['type'],
+        model_type='standard',
         rank=16,
         neurons1=256,
         neurons2=128,
@@ -325,8 +324,23 @@ def run_bayesian_optimization():
         print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
         print("="*70)
         
-        # Bayesian optimizasyonu çalıştır
-        optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
+        # Bayesian optimizasyonu çalıştır - Sadece standart model için
+        print("\nStandart model için Bayesian optimizasyon çalıştırılıyor...")
+        model, best_params, result = optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
+        
+        # En iyi parametreleri raporla
+        if best_params:
+            print("\nEN İYİ HİPERPARAMETRELER:")
+            print("-" * 40)
+            for param, value in best_params.items():
+                print(f"{param}: {value}")
+            
+            print(f"\nOptimize edilmiş model kaydedildi: outputs/bayesian_optimized_star_model.keras")
+            print("Bu modeli kullanmak için:")
+            print(">>> from tensorflow.keras.models import load_model")
+            print(">>> model = load_model('outputs/bayesian_optimized_star_model.keras')")
+            print(">>> tahminler = model.predict(yeni_veriler)")
+        
     except Exception as e:
         print(f"\nBayesian optimizasyon çalıştırılırken hata oluştu: {str(e)}")
         print("Ana model eğitimi başarıyla tamamlandı, optimizasyon adımı atlandı.")

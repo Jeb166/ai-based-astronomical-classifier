@@ -4,6 +4,9 @@ import time
 from functools import partial
 from sklearn.utils import class_weight
 import tensorflow as tf
+import json
+import joblib
+import matplotlib.pyplot as plt
 
 # Skopt için kütüphaneler
 from skopt import gp_minimize
@@ -54,11 +57,11 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     n_classes = y_train.shape[1]
     
     print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-    
-    # Parametre uzayını tanımla
+      # Parametre uzayını tanımla - Sadece standart model için
     param_space = [
-        Categorical(['standard', 'lightweight', 'separable', 'tree'], name='model_type'),
-        Integer(8, 32, name='rank'),  # Separable model için rank
+        # Sadece standart modeli kullanıyoruz
+        Categorical(['standard'], name='model_type'),
+        Integer(8, 32, name='rank'),  # Artık kullanılmıyor ama yapı için bırakıldı
         Integer(128, 512, name='neurons1'),
         Integer(64, 256, name='neurons2'),
         Real(0.2, 0.5, name='dropout1'),
@@ -175,12 +178,40 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     # En iyi modeli kaydet
     model_path = os.path.join(save_dir, "bayesian_optimized_star_model.keras")
     best_model.save(model_path)
-    print(f"En iyi model kaydedildi: {model_path}")
+    print(f"En iyi model kaydedildi: {model_path}")    # Optimizasyon sonuçlarını kaydet (pickle sorunu yaşamadan)
+    optimization_info = {
+        'best_params': best_params,
+        'best_score': -result.fun,  # Negative because we minimize -accuracy
+        'func_vals': [-v for v in result.func_vals.tolist()],  # Original accuracy values
+        'n_calls': len(result.func_vals)
+    }
     
-    # Optimizasyon sonuçlarını da kaydet
-    import joblib
-    result_path = os.path.join(save_dir, "bayesian_optimization_results.joblib")
-    joblib.dump(result, result_path)
+    # JSON formatında kaydet (daha güvenli)
+    import json
+    
+    # NumPy değerlerini düz Python değerlerine dönüştür
+    def convert_to_serializable(obj):
+        if isinstance(obj, (np.integer, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, float)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {k: convert_to_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_to_serializable(i) for i in obj]
+        else:
+            return obj
+    
+    # JSON için güvenli bir sözlük oluştur
+    safe_info = convert_to_serializable(optimization_info)
+    
+    # Sonuçları kaydet
+    result_path = os.path.join(save_dir, "bayesian_optimization_results.json")
+    with open(result_path, 'w') as f:
+        json.dump(safe_info, f, indent=2)
+    
     print(f"Optimizasyon sonuçları kaydedildi: {result_path}")
     
     # Grafikleri oluştur ve kaydet
@@ -221,8 +252,9 @@ if __name__ == "__main__":
     
     # Veri dosyalarını kontrol et
     if check_data_files():
-        # Bayesian optimizasyonu çalıştır
-        optimize_star_model_bayesian(n_trials=15)
+        # Bayesian optimizasyonu çalıştır - daha az deneme ile
+        print("\nSadece standart model için Bayesian optimizasyonu çalıştırılıyor...")
+        optimize_star_model_bayesian(n_trials=10)
     else:
         print("\nOptimizasyon iptal edildi. Lütfen eksik veri dosyalarını 'data/' klasörüne yükleyin.")
         print("Dosyaları yükledikten sonra programı tekrar çalıştırın.")
