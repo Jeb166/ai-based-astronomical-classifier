@@ -1,4 +1,4 @@
-# main.py — DNN + RF ensemble + STAR subtype model (fixed indent)
+# main.py — DNN + RF ensemble + STAR subtype model (Tüm optimizasyonları da içerecek şekilde)
 
 import os
 import joblib
@@ -6,20 +6,36 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import time
 from sklearn.metrics import confusion_matrix
 from sklearn.utils import class_weight
 from sklearn.ensemble import RandomForestClassifier
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+import tensorflow as tf
 
 from prepare_data import load_and_prepare, load_star_subset
 from model import build_model
-from star_model import build_star_model
+from star_model import build_star_model, train_star_model
 
 # ------------------------------------------------------------------
 # Helper will be defined after models are trained
 # ------------------------------------------------------------------
 
 def main():
+    # GPU kullanımını optimize et
+    print("TensorFlow sürümü:", tf.__version__)
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # GPU bellek büyümesini ayarla
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            print(f"GPU kullanıma hazır: {len(gpus)} adet GPU bulundu")
+        except RuntimeError as e:
+            print(f"GPU ayarlanırken hata: {e}")
+    else:
+        print("GPU bulunamadı, CPU kullanılacak.")
+    
     # ------------------------------------------------------------------
     # 0) Paths
     # ------------------------------------------------------------------
@@ -101,38 +117,157 @@ def main():
     joblib.dump(rf, f"{out_dir}/rf_model.joblib")    # ------------------------------------------------------------------
     # 7) STAR SUB‑CLASS MODEL
     # ------------------------------------------------------------------
+    
+    # A) Yıldız veri setini yükle
+    print("\n" + "="*70)
+    print("YILDIZ ALT TÜR MODELİ EĞİTİMİ VE OPTİMİZASYONU".center(70))
+    print("="*70)
+    
     Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
-    # Hafif ve daha hızlı eğitilebilen bir model kullan
-    from star_model import build_star_model, train_star_model
     
     # Sınıf ağırlıklarını hesapla
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
     cw_dict = dict(enumerate(cw))
     
-    # Hafif model oluştur (lightweight=True parametresi ile)
-    star_net = build_star_model(Xs_tr.shape[1], ys_tr.shape[1], lightweight=True)
+    # B) Farklı model mimarilerini karşılaştır
+    print("\nFARKLI MODEL MİMARİLERİNİ KARŞILAŞTIRMA")
+    print("-" * 40)
     
-    # Hızlı eğitim fonksiyonunu kullan
-    print("STAR subtype modeli eğitiliyor (hızlandırılmış)...")
+    # Model boyutları
+    n_features = Xs_tr.shape[1]
+    n_classes = ys_tr.shape[1]
+    
+    # Test edilecek model türleri
+    model_types = [
+        ("Standart", "standard"),
+        ("Hafif", "lightweight"),
+        ("Ayrılabilir", "separable"),
+        ("Ağaç Yapılı", "tree")
+    ]
+    
+    # Her modeli test et ve sonuçları sakla
+    results = []
+    max_samples_for_test = 20000  # Test için örnek sınırla
+    
+    print(f"Model karşılaştırması için {max_samples_for_test} örnek kullanılacak...")
+    
+    for model_name, model_type in model_types:
+        print(f"\n{model_name} model test ediliyor...")
+        start_time = time.time()
+        
+        # Modeli oluştur
+        model = build_star_model(
+            n_features, n_classes, 
+            model_type=model_type,
+            neurons1=256,
+            neurons2=128,
+            dropout1=0.3,
+            dropout2=0.3,
+            learning_rate=0.001
+        )
+        
+        # Gelişmiş stratejileri kullanarak eğit
+        model, history = train_star_model(
+            model, Xs_tr, ys_tr, Xs_val, ys_val, 
+            class_weights=cw_dict, 
+            max_samples=max_samples_for_test,
+            batch_size=128,
+            epochs=10,  # Hızlı test için az epoch
+            use_cyclic_lr=True,
+            use_trending_early_stop=True
+        )
+        
+        # Eğitim süresini ve test doğruluğunu hesapla
+        training_time = time.time() - start_time
+        test_acc = (model.predict(Xs_te).argmax(1) == ys_te.argmax(1)).mean() * 100
+        
+        # Sonuçları yazdır
+        print(f"{model_name} model eğitim süresi: {training_time:.2f} saniye")
+        print(f"{model_name} model test doğruluğu: {test_acc:.2f}%")
+        
+        # Sonuçları kaydet
+        results.append({
+            'name': model_name,
+            'type': model_type,
+            'accuracy': test_acc,
+            'time': training_time,
+            'model': model
+        })
+    
+    # Model karşılaştırma özeti
+    print("\nMODEL KARŞILAŞTIRMASI SONUÇLARI")
+    print("-------------------")
+    
+    for result in results:
+        print(f"{result['name']} Model: "
+              f"{result['accuracy']:.2f}% doğruluk, "
+              f"{result['time']:.2f} saniye")
+    
+    # Doğruluk bazlı en iyi model
+    best_accuracy_model = max(results, key=lambda x: x['accuracy'])
+    print(f"\nEn yüksek doğruluk: {best_accuracy_model['name']} "
+          f"({best_accuracy_model['accuracy']:.2f}%)")
+    
+    # Hız bazlı en iyi model
+    sorted_by_time = sorted(results, key=lambda x: x['time'])
+    fastest_model = sorted_by_time[0]
+    print(f"En hızlı eğitim: {fastest_model['name']} "
+          f"({fastest_model['time']:.2f} saniye)")
+    
+    # C) Seçilen modeli tam veri üzerinde eğit
+    print("\nSEÇİLEN MODELİ GERÇEK VERİLERDE EĞİTME")
+    print("-" * 40)
+    
+    # En iyi doğruluk/hız dengesini bul
+    for result in results:
+        result['speed_score'] = (result['accuracy'] / 
+                                (result['time'] / min(r['time'] for r in results)))
+    
+    best_balanced_model = max(results, key=lambda x: x['speed_score'])
+    print(f"Seçilen model: {best_balanced_model['name']} "
+          f"(Hız skoru: {best_balanced_model['speed_score']:.2f})")
+    
+    # Ana modeli oluştur ve eğit
+    print(f"\nSeçilen model tam veri üzerinde eğitiliyor ({best_balanced_model['type']})...")
+    star_net = build_star_model(
+        n_features, n_classes,
+        model_type=best_balanced_model['type'],
+        rank=16,
+        neurons1=256,
+        neurons2=128,
+        dropout1=0.3,
+        dropout2=0.3,
+        learning_rate=0.001
+    )
+    
+    # Tam veri üzerinde eğit
     star_net, history = train_star_model(
         star_net, 
         Xs_tr, ys_tr,
         Xs_val, ys_val,
         class_weights=cw_dict,
-        max_samples=30000  # Daha az örnek kullan
+        max_samples=None,  # Tüm verileri kullan
+        batch_size=128,
+        epochs=20,
+        use_cyclic_lr=True,
+        use_trending_early_stop=True
     )
     
     # Test doğruluğunu değerlendir
     star_acc = (star_net.predict(Xs_te).argmax(1)==ys_te.argmax(1)).mean()*100
-    print(f"STAR subtype Test Acc: {star_acc:.2f}%")
+    print(f"\nSTAR subtype Test Acc: {star_acc:.2f}%")
     
     # Modeli kaydet
     star_net.save(f"{out_dir}/star_model.keras")
     joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
     joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
-
-    # ------------------ helper for UI / further use -----------------
+    
+    # Tüm modelleri de kaydet (opsiyonel)
+    for result in results:
+        model_path = f"{out_dir}/{result['type']}_star_model.keras"
+        result['model'].save(model_path)
+        print(f"{result['name']} model kaydedildi: {model_path}")    # ------------------ helper for UI / further use -----------------
     global full_predict
     def full_predict(sample_array):
         """Return GALAXY/QSO/STAR‑subtype for each input row (2‑stage)."""
@@ -153,6 +288,59 @@ def main():
     globals().update({'dnn': dnn, 'rf': rf, 'best_w': best_w,
                       'labels': labels, 'star_net': star_net,
                       'scaler_star': scaler_star, 'le_star': le_star})
+    
+    print("\n" + "="*70)
+    print("TÜM EĞİTİM VE OPTİMİZASYON İŞLEMLERİ TAMAMLANDI".center(70))
+    print("="*70)
+    print(f"\nTüm modeller '{out_dir}' klasörüne kaydedildi.")
+    print("\nÖnemli dosyalar:")
+    print(f"- {out_dir}/dnn_model.keras: Ana DNN modeli")
+    print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
+    print(f"- {out_dir}/star_model.keras: Seçilen yıldız alt tür modeli")
+    for result in results:
+        print(f"- {out_dir}/{result['type']}_star_model.keras: {result['name']} yıldız modeli")
+    
+    # Modelinizi kullanmak için:
+    print("\nBu modeli kullanmak için:")
+    print(">>> from main import full_predict")
+    print(">>> sonuclar = full_predict(yeni_veriler)")
+
+def run_bayesian_optimization():
+    """Bayesian optimizasyonu çalıştır (ayrı bir işlev olarak)"""
+    from bayesian_optimize_star import optimize_star_model_bayesian
+    
+    print("\n" + "="*70)
+    print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
+    print("="*70)
+    
+    # Bayesian optimizasyonu çalıştır
+    optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
 
 if __name__ == '__main__':
-    main()
+    # Ana modellerin eğitimi
+    print("\n" + "="*70)
+    print("ASTRONOMİK SINIFLANDIRICI EĞİTİMİ BAŞLATILIYOR".center(70))
+    print("="*70)
+    
+    # Kullanıcıya seçenekler sun
+    print("\nÇalıştırılacak modlar:")
+    print("1. Standart eğitim (main)")
+    print("2. Bayesian hiperparametre optimizasyonu")
+    print("3. Tüm modlar (eğitim + optimizasyon)")
+    
+    try:
+        mode = int(input("\nSeçiminiz (1/2/3) [varsayılan=3]: ") or "3")
+    except ValueError:
+        mode = 3
+        print("Geçersiz seçim, varsayılan olarak tüm modlar çalıştırılacak.")
+    
+    # Seçilen moda göre çalıştır
+    if mode == 1:
+        main()
+    elif mode == 2:
+        run_bayesian_optimization()
+    else:
+        main()
+        run_bayesian_optimization()
+    
+    print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")

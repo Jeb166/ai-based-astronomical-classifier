@@ -1,58 +1,171 @@
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input, Layer, concatenate, Activation
 from tensorflow.keras.regularizers import l2
+from tensorflow.keras.optimizers import Adam
 
-def build_star_model(input_dim: int, n_classes: int, lightweight=True):
+# Ayrılabilir Tam Bağlantılı Katman (SeparableFC) Uygulaması
+class SeparableFC(Layer):
+    """
+    Ayrılabilir tam bağlantılı katman (Dense katmanının hafif versiyonu).
+    Parametre sayısını önemli ölçüde azaltır: input_dim * rank + rank * units
+    """
+    
+    def __init__(self, units, rank=8, activation=None, use_bias=True, **kwargs):
+        super(SeparableFC, self).__init__(**kwargs)
+        self.units = units
+        self.rank = rank  # Ayırma boyutu
+        self.activation = tf.keras.activations.get(activation)
+        self.use_bias = use_bias
+        
+    def build(self, input_shape):
+        input_dim = int(input_shape[-1])
+        
+        # İki küçük matris oluşturarak parametre sayısını azalt
+        # Standart FC: input_dim * units parametre
+        # Ayrılabilir FC: input_dim * rank + rank * units parametre
+        self.w1 = self.add_weight(
+            shape=(input_dim, self.rank),
+            initializer='glorot_uniform',
+            name='w1'
+        )
+        self.w2 = self.add_weight(
+            shape=(self.rank, self.units),
+            initializer='glorot_uniform',
+            name='w2'
+        )
+        
+        if self.use_bias:
+            self.bias = self.add_weight(
+                shape=(self.units,),
+                initializer='zeros',
+                name='bias'
+            )
+        self.built = True
+        
+    def call(self, inputs):
+        # İki adımda hesapla
+        x = tf.matmul(inputs, self.w1)  # (batch, input_dim) x (input_dim, rank)
+        x = tf.matmul(x, self.w2)       # (batch, rank) x (rank, units)
+        
+        if self.use_bias:
+            x = tf.nn.bias_add(x, self.bias)
+        
+        if self.activation is not None:
+            x = self.activation(x)
+        return x
+    
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.units)
+
+def build_star_model(input_dim: int, n_classes: int, model_type='standard', rank=16,
+                    neurons1=256, neurons2=128, neurons3=64, 
+                    dropout1=0.4, dropout2=0.4, dropout3=0.3,
+                    learning_rate=0.001):
     """
     Yıldız türlerini sınıflandırmak için derin sinir ağı modeli oluşturur.
     
     Parametreler:
     - input_dim: Giriş özelliklerinin boyutu
     - n_classes: Sınıf sayısı (çıkış nöronları)
-    - lightweight: Eğer True ise, daha az parametre içeren hafif model oluşturur
+    - model_type: 'standard', 'lightweight', 'separable', veya 'tree'
+    - rank: Separable model için rank değeri
+    - neurons1/2/3: Her katman için nöron sayıları
+    - dropout1/2/3: Her katman için dropout oranları
+    - learning_rate: Öğrenme oranı
     
     Returns:
     - Derlenmiş model
     """
-    if lightweight:
+    if model_type == 'lightweight':
         # Hafif model (daha hızlı eğitim)
         model = Sequential([
             Input(shape=(input_dim,)),
-            Dense(256, activation='relu', kernel_regularizer=l2(1e-4)),
+            Dense(neurons1, activation='relu', kernel_regularizer=l2(1e-4)),
             BatchNormalization(),
-            Dropout(0.3),
-            Dense(128, activation='relu', kernel_regularizer=l2(1e-4)),
+            Dropout(dropout1),
+            Dense(neurons2, activation='relu', kernel_regularizer=l2(1e-4)),
             BatchNormalization(),
-            Dropout(0.3),
+            Dropout(dropout2),
             Dense(n_classes, activation='softmax')
         ])
-    else:
-        # Orijinal model (daha yüksek kapasite)
+    elif model_type == 'separable':
+        # Ayrılabilir katmanlı model (en hafif)
         model = Sequential([
             Input(shape=(input_dim,)),
-            Dense(512, activation='relu', kernel_regularizer=l2(1e-4)),
+            SeparableFC(neurons1, rank=rank),
+            Activation('relu'),
             BatchNormalization(),
-            Dropout(0.5),
-            Dense(256, activation='relu', kernel_regularizer=l2(1e-4)),
+            Dropout(dropout1),
+            
+            SeparableFC(neurons2, rank=rank),
+            Activation('relu'),
+            BatchNormalization(),
+            Dropout(dropout2),
+            
+            SeparableFC(n_classes, rank=rank, activation='softmax')
+        ])
+    elif model_type == 'tree':
+        # Ağaç yapılı mimari (domain bilgisini kullanır)
+        # Girdi
+        inputs = Input(shape=(input_dim,))
+        
+        # Özellik gruplarını ayır (astronomik veri için mantıklı)
+        # Renk indeksi özellikleri (u-g, g-r, r-i, i-z)
+        color_feats = Dense(64, activation='relu')(inputs)
+        color_feats = BatchNormalization()(color_feats)
+        color_feats = Dropout(dropout1)(color_feats)
+        
+        # Parlaklık özellikleri (u, g, r, i, z)
+        magnitude_feats = Dense(64, activation='relu')(inputs)
+        magnitude_feats = BatchNormalization()(magnitude_feats)
+        magnitude_feats = Dropout(dropout1)(magnitude_feats)
+        
+        # Diğer özellikler
+        other_feats = Dense(32, activation='relu')(inputs)
+        other_feats = BatchNormalization()(other_feats)
+        other_feats = Dropout(dropout1)(other_feats)
+        
+        # Alt özellikleri birleştir
+        combined = concatenate([color_feats, magnitude_feats, other_feats])
+        
+        # Çıktı katmanı
+        outputs = Dense(neurons2, activation='relu')(combined)
+        outputs = BatchNormalization()(outputs)
+        outputs = Dropout(dropout2)(outputs)
+        outputs = Dense(n_classes, activation='softmax')(outputs)
+        
+        # Model oluştur
+        model = Model(inputs=inputs, outputs=outputs)
+    else:
+        # Standart model (orijinal, tam kapasite)
+        model = Sequential([
+            Input(shape=(input_dim,)),
+            Dense(neurons1, activation='relu', kernel_regularizer=l2(1e-4)),
+            BatchNormalization(),
+            Dropout(dropout1),
+            Dense(neurons2, activation='relu', kernel_regularizer=l2(1e-4)),
             BatchNormalization(), 
-            Dropout(0.5),
-            Dense(128, activation='relu', kernel_regularizer=l2(1e-4)),
+            Dropout(dropout2),
+            Dense(neurons3, activation='relu', kernel_regularizer=l2(1e-4)),
             BatchNormalization(),
-            Dropout(0.4),
+            Dropout(dropout3),
             Dense(n_classes, activation='softmax')
         ])
     
     model.compile(
-        optimizer='adam',
+        optimizer=Adam(learning_rate=learning_rate),
         loss='categorical_crossentropy',
         metrics=['categorical_accuracy']
     )
     return model
 
 # Hızlı eğitim için yardımcı fonksiyon
-def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None, max_samples=None):
+def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None, 
+                    max_samples=None, batch_size=128, epochs=20, 
+                    use_cyclic_lr=True, use_trending_early_stop=True):
     """
-    Yıldız türü modelini eğitmek için hızlı bir yöntem.
+    Yıldız türü modelini gelişmiş eğitim stratejileriyle eğitmek için hızlı bir yöntem.
     
     Parametreler:
     - model: Eğitilecek model
@@ -60,14 +173,18 @@ def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None, 
     - X_val, y_val: Doğrulama verileri
     - class_weights: Sınıf ağırlıkları (opsiyonel)
     - max_samples: Maksimum örnek sayısı (alt örnekleme için)
+    - batch_size: Yığın boyutu
+    - epochs: Maksimum epoch sayısı
+    - use_cyclic_lr: Döngüsel öğrenme oranı kullanılsın mı
+    - use_trending_early_stop: Trendi izleyen erken durdurma kullanılsın mı
     
     Returns:
     - Eğitilmiş model ve eğitim geçmişi
     """
-    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, LearningRateScheduler, Callback
     import numpy as np
     
-    # Eğitim veri setini küçültmek için alt örnekleme (isteğe bağlı)
+    # Eğitim veri setini küçültme (alt örnekleme)
     if max_samples and len(X_train) > max_samples:
         print(f"Eğitim veri setini {max_samples} örneğe küçültüyorum...")
         idx = np.random.choice(len(X_train), max_samples, replace=False)
@@ -76,17 +193,105 @@ def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None, 
     else:
         X_train_sample, y_train_sample = X_train, y_train
     
+    # Callback'leri hazırla
+    callbacks = []
+    
+    # 1. Trendi izleyen erken durdurma
+    if use_trending_early_stop:
+        class TrendingEarlyStopping(Callback):
+            """Uzun vadeli eğilimi izleyen erken durdurma"""
+            
+            def __init__(self, monitor='val_loss', patience=5, window_size=8, min_delta=0):
+                super(TrendingEarlyStopping, self).__init__()
+                self.monitor = monitor
+                self.patience = patience
+                self.window_size = window_size
+                self.min_delta = min_delta
+                self.wait = 0
+                self.best = float('inf') if 'loss' in monitor else -float('inf')
+                self.history = []
+                
+            def on_epoch_end(self, epoch, logs=None):
+                logs = logs or {}
+                current = logs.get(self.monitor)
+                if current is None:
+                    return
+                
+                self.history.append(current)
+                
+                if len(self.history) >= self.window_size:
+                    # Son window_size değerini kullanarak eğilimi hesapla
+                    recent = self.history[-self.window_size:]
+                    # Doğrusal regresyon eğimi
+                    x = np.arange(len(recent))
+                    slope = np.polyfit(x, recent, 1)[0]
+                    
+                    # 'loss' için negatif eğim iyidir, diğer metrikler için pozitif
+                    is_improving = slope < -self.min_delta if 'loss' in self.monitor else slope > self.min_delta
+                    
+                    if not is_improving:
+                        self.wait += 1
+                        if self.wait >= self.patience:
+                            self.model.stop_training = True
+                            print(f"\nEğitim durduruldu: {self.window_size} epoch'luk eğilim iyileşmiyor.")
+                    else:
+                        self.wait = 0
+        
+        trend_stopping = TrendingEarlyStopping(
+            monitor='val_categorical_accuracy',
+            patience=3,
+            window_size=6,
+            min_delta=0.001
+        )
+        callbacks.append(trend_stopping)
+    else:
+        # Standart erken durdurma
+        callbacks.append(
+            EarlyStopping(
+                monitor='val_categorical_accuracy',
+                patience=3,
+                restore_best_weights=True
+            )
+        )
+    
+    # 2. Döngüsel öğrenme oranı
+    if use_cyclic_lr:
+        def cyclic_learning_rate(epoch, min_lr=1e-5, max_lr=1e-3, cycle_length=5):
+            """Döngüsel öğrenme oranı planı"""
+            # Döngü içindeki mevcut konum (0 ile 1 arasında)
+            cycle_progress = (epoch % cycle_length) / cycle_length
+            
+            # Kosinüs dalgası (0 ile 1 arasında, yarım döngü)
+            cos_wave = 0.5 * (1 + np.cos(np.pi * (cycle_progress * 2 - 1)))
+            
+            # Logaritmik ölçekte yumuşak geçiş
+            log_min, log_max = np.log10(min_lr), np.log10(max_lr)
+            log_lr = log_min + cos_wave * (log_max - log_min)
+            
+            return 10 ** log_lr
+        
+        lr_scheduler = LearningRateScheduler(cyclic_learning_rate)
+        callbacks.append(lr_scheduler)
+    else:
+        # Standart öğrenme oranı azaltıcı
+        callbacks.append(
+            ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=2,
+                min_lr=1e-6,
+                verbose=1
+            )
+        )
+    
     # Eğitim
     history = model.fit(
         X_train_sample, y_train_sample,
-        epochs=20,  # Daha az epoch sayısı
-        batch_size=128,  # Daha büyük batch size
+        epochs=epochs,
+        batch_size=batch_size,
         validation_data=(X_val, y_val),
         class_weight=class_weights,
-        callbacks=[
-            EarlyStopping(monitor='val_categorical_accuracy', patience=3, restore_best_weights=True),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-6, verbose=1)
-        ],
+        callbacks=callbacks,
         verbose=1
     )
     
