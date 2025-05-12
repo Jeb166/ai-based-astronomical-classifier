@@ -1,9 +1,11 @@
 import os
 import numpy as np
 import time
+import sys
 from functools import partial
 from sklearn.utils import class_weight
 import tensorflow as tf
+import importlib.util
 
 # Skopt için kütüphaneler
 from skopt import gp_minimize
@@ -14,6 +16,67 @@ from skopt.plots import plot_convergence, plot_objective
 # Veri ve model için kütüphaneler
 from prepare_data import load_star_subset
 from star_model import build_star_model, train_star_model
+
+# Veri dosyalarını kontrol et
+def check_data_files():
+    """Gerekli veri dosyalarını kontrol eder ve eksikse indirmeyi dener"""
+    data_dir = 'data'
+    required_files = ['star_subtypes.csv', 'skyserver.csv']
+    
+    # Veri dizini yoksa oluştur
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+        print(f"'{data_dir}' dizini oluşturuldu.")
+    
+    # Dosyaları kontrol et
+    missing_files = []
+    for file in required_files:
+        file_path = os.path.join(data_dir, file)
+        if not os.path.exists(file_path):
+            missing_files.append(file)
+    
+    if missing_files:
+        print("Aşağıdaki veri dosyaları eksik:")
+        for file in missing_files:
+            print(f"  - {file}")
+            
+        # download_data.py dosyasını kontrol et
+        download_module_path = os.path.join(os.path.dirname(__file__), 'download_data.py')
+        if os.path.exists(download_module_path):
+            print("\nEksik dosyaları indirmeyi deniyorum...")
+            try:
+                # download_data modülünü dinamik olarak yükle
+                spec = importlib.util.spec_from_file_location("download_data", download_module_path)
+                download_data = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(download_data)
+                
+                # Veri dosyalarını indir
+                download_data.check_and_download_data()
+                
+                # Tekrar kontrol et
+                all_found = True
+                for file in missing_files:
+                    if not os.path.exists(os.path.join(data_dir, file)):
+                        all_found = False
+                        print(f"Uyarı: {file} hala eksik.")
+                
+                if not all_found:
+                    print("\nBazı veri dosyaları hala eksik. Lütfen bunları manuel olarak yükleyin.")
+                    print("Colab'da dosyaları manuel olarak yüklemek için şu adımları izleyin:")
+                    print("1. Sol paneldeki dosya simgesine tıklayın")
+                    print("2. data/ klasörüne tıklayın (yoksa oluşturun)")
+                    print("3. Yükle butonunu kullanarak dosyaları yükleyin")
+                    print("\nDosyalar yüklendikten sonra programı tekrar çalıştırın.")
+                    return False
+            except Exception as e:
+                print(f"Veri indirme hatası: {e}")
+                print("\nLütfen veri dosyalarını manuel olarak data/ dizinine yükleyin.")
+                return False
+        else:
+            print("\nLütfen veri dosyalarını manuel olarak data/ dizinine yükleyin.")
+            return False
+    
+    return True
 
 # Optimizasyon fonksiyonumuz
 def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
@@ -32,6 +95,11 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     # Çıktı dizinini oluştur
     os.makedirs(save_dir, exist_ok=True)
     
+    # Veri dosyalarını kontrol et
+    if not check_data_files():
+        print("Veri dosyaları eksik. Optimizasyon iptal ediliyor.")
+        return None, None, None
+    
     # Veriyi yükle
     print("Veri yükleniyor...")
     data_path_star = 'data/star_subtypes.csv'
@@ -47,8 +115,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     n_classes = y_train.shape[1]
     
     print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-    
-    # Parametre uzayını tanımla
+      # Parametre uzayını tanımla
     param_space = [
         Categorical(['standard', 'lightweight', 'separable', 'tree'], name='model_type'),
         Integer(8, 32, name='rank'),  # Separable model için rank
@@ -60,28 +127,37 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         Integer(64, 256, name='batch_size')
     ]
     
-    # Optimizasyon için objektif fonksiyon    @use_named_args(param_space)
-    def objective(**params):
+    # Optimizasyon için objektif fonksiyon
+    @use_named_args(param_space)
+    def objective(model_type, rank, neurons1, neurons2, dropout1, dropout2, learning_rate, batch_size):
         """
         Her hiperparametre seti için modeli eğitir ve doğrulama doğruluğunu döndürür.
         Minimum'a optimizasyon yaptığımız için negatif doğruluk döndürürüz.
         """
+        params = {
+            'model_type': model_type,
+            'rank': rank,
+            'neurons1': neurons1,
+            'neurons2': neurons2,
+            'dropout1': dropout1,
+            'dropout2': dropout2,
+            'learning_rate': learning_rate,
+            'batch_size': batch_size
+        }
         print(f"\nParametreleri değerlendiriyorum: {params}")
         
-        # batch_size parametresini model oluşturma fonksiyonuna geçirmiyoruz
         model = build_star_model(
             input_dim=n_features, 
             n_classes=n_classes,
-            model_type=params['model_type'],
-            rank=params['rank'],
-            neurons1=params['neurons1'],
-            neurons2=params['neurons2'],
-            dropout1=params['dropout1'],
-            dropout2=params['dropout2'],
-            learning_rate=params['learning_rate']
+            model_type=model_type,
+            rank=rank,
+            neurons1=neurons1,
+            neurons2=neurons2,
+            dropout1=dropout1,
+            dropout2=dropout2,
+            learning_rate=learning_rate
         )
-        
-        # Eğitim için daha az veri kullan (hızlı değerlendirme için)
+          # Eğitim için daha az veri kullan (hızlı değerlendirme için)
         max_samples = 20000
         
         start_time = time.time()
@@ -93,7 +169,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
             X_val, y_val, 
             class_weights=cw_dict,
             max_samples=max_samples,
-            batch_size=params['batch_size'],
+            batch_size=batch_size,
             epochs=15,  # Daha az epoch
             use_cyclic_lr=True,
             use_trending_early_stop=True
@@ -111,8 +187,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         # Minimizasyon için negatif doğruluk
         return -val_accuracy
     
-    # Bayesian optimizasyonu başlat
-    print(f"\nBayesian optimizasyon başlıyor... {n_trials} deneme yapılacak")
+    # Bayesian optimizasyonu başlat    print(f"\nBayesian optimizasyon başlıyor... {n_trials} deneme yapılacak")
     
     result = gp_minimize(
         objective,
@@ -128,7 +203,8 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     print("\nEn iyi parametreler:")
     for param, value in best_params.items():
         print(f"{param}: {value}")
-      # En iyi modeli eğit (tam verilerle)
+    
+    # En iyi modeli eğit (tam verilerle)
     print("\nEn iyi model tam verilerle eğitiliyor...")
     # batch_size parametresini build_star_model fonksiyonu için çıkarıyoruz
     model_params = {k: v for k, v in best_params.items() if k != 'batch_size'}
