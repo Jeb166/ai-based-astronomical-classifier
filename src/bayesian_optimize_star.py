@@ -17,8 +17,7 @@ from star_model import build_star_model, train_star_model
 from download_data import check_data_files
 
 # Optimizasyon fonksiyonumuz
-def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
-    """
+def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):    """
     Bayesian optimizasyonu kullanarak star modeli hiperparametrelerini optimizasyon yapar
     
     Parametreler:
@@ -38,62 +37,8 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         print("Veri dosyaları eksik. Optimizasyon iptal ediliyor.")
         print("Lütfen eksik veri dosyalarını 'data/' klasörüne yükleyin ve tekrar deneyin.")
         return None, None, None
-            try:
-                # download_data modülünü dinamik olarak yükle
-                spec = importlib.util.spec_from_file_location("download_data", download_module_path)
-                download_data = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(download_data)
-                
-                # Veri dosyalarını indir
-                download_data.check_and_download_data()
-                
-                # Tekrar kontrol et
-                all_found = True
-                for file in missing_files:
-                    if not os.path.exists(os.path.join(data_dir, file)):
-                        all_found = False
-                        print(f"Uyarı: {file} hala eksik.")
-                
-                if not all_found:
-                    print("\nBazı veri dosyaları hala eksik. Lütfen bunları manuel olarak yükleyin.")
-                    print("Colab'da dosyaları manuel olarak yüklemek için şu adımları izleyin:")
-                    print("1. Sol paneldeki dosya simgesine tıklayın")
-                    print("2. data/ klasörüne tıklayın (yoksa oluşturun)")
-                    print("3. Yükle butonunu kullanarak dosyaları yükleyin")
-                    print("\nDosyalar yüklendikten sonra programı tekrar çalıştırın.")
-                    return False
-            except Exception as e:
-                print(f"Veri indirme hatası: {e}")
-                print("\nLütfen veri dosyalarını manuel olarak data/ dizinine yükleyin.")
-                return False
-        else:
-            print("\nLütfen veri dosyalarını manuel olarak data/ dizinine yükleyin.")
-            return False
     
-    return True
-
-# Optimizasyon fonksiyonumuz
-def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
-    """
-    Bayesian optimizasyonu kullanarak star modeli hiperparametrelerini optimizasyon yapar
-    
-    Parametreler:
-    - n_trials: Deneme sayısı
-    - save_dir: Çıktıların kaydedileceği dizin
-    
-    Returns:
-    - En iyi model
-    - En iyi parametreler
-    - Optimizasyon sonuçları
-    """
-    # Çıktı dizinini oluştur
-    os.makedirs(save_dir, exist_ok=True)
-    
-    # Veri dosyalarını kontrol et
-    if not check_data_files():
-        print("Veri dosyaları eksik. Optimizasyon iptal ediliyor.")
-        return None, None, None
-      # Veriyi yükle
+    # Veriyi yükle
     print("Veri yükleniyor...")
     data_path_star = 'data/star_subtypes.csv'
     X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
@@ -120,7 +65,8 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         Real(1e-5, 1e-2, prior='log-uniform', name='learning_rate'),
         Integer(64, 256, name='batch_size')
     ]
-      # Optimizasyon için objektif fonksiyon
+    
+    # Optimizasyon için objektif fonksiyon
     @use_named_args(param_space)
     def objective(model_type, rank, neurons1, neurons2, dropout1, dropout2, learning_rate, batch_size):
         """
@@ -174,10 +120,10 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         print(f"Model tipi: {params['model_type']}, "
               f"Doğrulama doğruluğu: {val_accuracy:.4f}, "
               f"Eğitim süresi: {training_time:.1f} saniye")
-          # Minimizasyon için negatif doğruluk
+        
+        # Minimizasyon için negatif doğruluk
         return -val_accuracy
-    
-    # Bayesian optimizasyonu başlat
+      # Bayesian optimizasyonu başlat
     print(f"\nBayesian optimizasyon başlıyor... {n_trials} deneme yapılacak")
     
     result = gp_minimize(
@@ -193,7 +139,9 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     best_params = dict(zip([dim.name for dim in param_space], result.x))
     print("\nEn iyi parametreler:")
     for param, value in best_params.items():
-        print(f"{param}: {value}")    # En iyi modeli eğit (tam verilerle)
+        print(f"{param}: {value}")
+    
+    # En iyi modeli eğit (tam verilerle)
     print("\nEn iyi model tam verilerle eğitiliyor...")
     
     # batch_size parametresini build_star_model fonksiyonu için çıkarıyoruz
