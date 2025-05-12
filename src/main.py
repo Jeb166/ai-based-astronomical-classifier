@@ -129,8 +129,7 @@ def main():
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
     cw_dict = dict(enumerate(cw))
-    
-    # B) Farklı model mimarilerini karşılaştır
+      # B) Farklı model mimarilerini karşılaştır
     print("\nFARKLI MODEL MİMARİLERİNİ KARŞILAŞTIRMA")
     print("-" * 40)
     
@@ -151,6 +150,7 @@ def main():
     max_samples_for_test = 20000  # Test için örnek sınırla
     
     print(f"Model karşılaştırması için {max_samples_for_test} örnek kullanılacak...")
+    print("Not: Bu adım sadece model seçimi içindir. Final model tüm veri kullanılarak eğitilecektir.\n")
     
     for model_name, model_type in model_types:
         print(f"\n{model_name} model test ediliyor...")
@@ -214,8 +214,7 @@ def main():
     fastest_model = sorted_by_time[0]
     print(f"En hızlı eğitim: {fastest_model['name']} "
           f"({fastest_model['time']:.2f} saniye)")
-    
-    # C) Seçilen modeli tam veri üzerinde eğit
+      # C) Seçilen modeli tam veri üzerinde eğit
     print("\nSEÇİLEN MODELİ GERÇEK VERİLERDE EĞİTME")
     print("-" * 40)
     
@@ -224,15 +223,17 @@ def main():
         result['speed_score'] = (result['accuracy'] / 
                                 (result['time'] / min(r['time'] for r in results)))
     
-    best_balanced_model = max(results, key=lambda x: x['speed_score'])
-    print(f"Seçilen model: {best_balanced_model['name']} "
-          f"(Hız skoru: {best_balanced_model['speed_score']:.2f})")
+    # En iyi modeli seç (doğruluk öncelikli)
+    best_model = max(results, key=lambda x: x['accuracy'])
+    print(f"Seçilen model: {best_model['name']} "
+          f"(Doğruluk: {best_model['accuracy']:.2f}%, "
+          f"Hız skoru: {best_model['speed_score']:.2f})")
     
     # Ana modeli oluştur ve eğit
-    print(f"\nSeçilen model tam veri üzerinde eğitiliyor ({best_balanced_model['type']})...")
+    print(f"\nSeçilen model tam veri üzerinde eğitiliyor ({best_model['type']})...")
     star_net = build_star_model(
         n_features, n_classes,
-        model_type=best_balanced_model['type'],
+        model_type=best_model['type'],
         rank=16,
         neurons1=256,
         neurons2=128,
@@ -307,16 +308,55 @@ def main():
 
 def run_bayesian_optimization():
     """Bayesian optimizasyonu çalıştır (ayrı bir işlev olarak)"""
-    from bayesian_optimize_star import optimize_star_model_bayesian
-    
-    print("\n" + "="*70)
-    print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
-    print("="*70)
-    
-    # Bayesian optimizasyonu çalıştır
-    optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
+    try:
+        # scikit-optimize kütüphanesini kontrol et ve yükle
+        try:
+            import skopt
+        except ImportError:
+            print("\nBayesian optimizasyon için 'scikit-optimize' kütüphanesi yükleniyor...")
+            import sys
+            import subprocess
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
+            print("scikit-optimize başarıyla yüklendi!")
+        
+        from bayesian_optimize_star import optimize_star_model_bayesian
+        
+        print("\n" + "="*70)
+        print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
+        print("="*70)
+        
+        # Bayesian optimizasyonu çalıştır
+        optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
+    except Exception as e:
+        print(f"\nBayesian optimizasyon çalıştırılırken hata oluştu: {str(e)}")
+        print("Ana model eğitimi başarıyla tamamlandı, optimizasyon adımı atlandı.")
 
 if __name__ == '__main__':
+    # Gerekli kütüphaneleri kontrol et
+    try:
+        print("\n--- Bağımlılıklar kontrol ediliyor ---")
+        # TensorFlow zaten kontrol edildi
+        
+        # scikit-learn
+        import sklearn
+        print(f"scikit-learn sürümü: {sklearn.__version__}")
+        
+        # Gerekli diğer kütüphaneler
+        import matplotlib
+        print(f"matplotlib sürümü: {matplotlib.__version__}")
+        
+        import pandas
+        print(f"pandas sürümü: {pandas.__version__}")
+        
+        # Joblib
+        import joblib
+        print(f"joblib sürümü: {joblib.__version__}")
+        
+        print("Tüm gerekli kütüphaneler mevcut.\n")
+    except ImportError as e:
+        print(f"Eksik kütüphane bulundu: {e}")
+        print("pip install scikit-learn pandas matplotlib joblib tensorflow seaborn")
+    
     # Ana modellerin eğitimi
     print("\n" + "="*70)
     print("ASTRONOMİK SINIFLANDIRICI EĞİTİMİ BAŞLATILIYOR".center(70))
