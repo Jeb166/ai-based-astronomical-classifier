@@ -1,7 +1,4 @@
-# main.py — DNN + RF ensemble + STAR subtype model (Tüm optimizasyonları da içerecek şekilde)
-
 import os
-import joblib
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,7 +7,7 @@ import time
 from sklearn.metrics import confusion_matrix
 from sklearn.utils import class_weight
 from sklearn.ensemble import RandomForestClassifier
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import tensorflow as tf
 
 from prepare_data import load_and_prepare, load_star_subset
@@ -114,7 +111,10 @@ def main():
     # 6) SAVE GAL/QSO/STAR MODELS
     # ------------------------------------------------------------------
     dnn.save(f"{out_dir}/dnn_model.keras")
-    joblib.dump(rf, f"{out_dir}/rf_model.joblib")    # ------------------------------------------------------------------
+    import joblib
+    joblib.dump(rf, f"{out_dir}/rf_model.joblib")
+    
+    # ------------------------------------------------------------------
     # 7) STAR SUB‑CLASS MODEL
     # ------------------------------------------------------------------
     
@@ -129,133 +129,42 @@ def main():
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
     cw_dict = dict(enumerate(cw))
-      # B) Farklı model mimarilerini karşılaştır
-    print("\nFARKLI MODEL MİMARİLERİNİ KARŞILAŞTIRMA")
+    
+    # B) Standart model eğitimi
+    print("\nSTANDART MODEL EĞİTİMİ")
     print("-" * 40)
     
     # Model boyutları
     n_features = Xs_tr.shape[1]
     n_classes = ys_tr.shape[1]
     
-    # Test edilecek model türleri
-    model_types = [
-        ("Standart", "standard"),
-        ("Hafif", "lightweight"),
-        ("Ayrılabilir", "separable"),
-        ("Ağaç Yapılı", "tree")
-    ]
+    print("Standart model eğitiliyor...")
+    print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
     
-    # Her modeli test et ve sonuçları sakla
-    results = []
-    max_samples_for_test = 20000  # Test için örnek sınırla
-    
-    print(f"Model karşılaştırması için {max_samples_for_test} örnek kullanılacak...")
-    print("Not: Bu adım sadece model seçimi içindir. Final model tüm veri kullanılarak eğitilecektir.\n")
-    
-    for model_name, model_type in model_types:
-        print(f"\n{model_name} model test ediliyor...")
-        start_time = time.time()
-        
-        # Modeli oluştur
-        model = build_star_model(
-            n_features, n_classes, 
-            model_type=model_type,
-            neurons1=256,
-            neurons2=128,
-            dropout1=0.3,
-            dropout2=0.3,
-            learning_rate=0.001
-        )
-        
-        # Gelişmiş stratejileri kullanarak eğit
-        model, history = train_star_model(
-            model, Xs_tr, ys_tr, Xs_val, ys_val, 
-            class_weights=cw_dict, 
-            max_samples=max_samples_for_test,
-            batch_size=128,
-            epochs=10,  # Hızlı test için az epoch
-            use_cyclic_lr=True,
-            use_trending_early_stop=True
-        )
-        
-        # Eğitim süresini ve test doğruluğunu hesapla
-        training_time = time.time() - start_time
-        test_acc = (model.predict(Xs_te).argmax(1) == ys_te.argmax(1)).mean() * 100
-        
-        # Sonuçları yazdır
-        print(f"{model_name} model eğitim süresi: {training_time:.2f} saniye")
-        print(f"{model_name} model test doğruluğu: {test_acc:.2f}%")
-        
-        # Sonuçları kaydet
-        results.append({
-            'name': model_name,
-            'type': model_type,
-            'accuracy': test_acc,
-            'time': training_time,
-            'model': model
-        })
-    
-    # Model karşılaştırma özeti
-    print("\nMODEL KARŞILAŞTIRMASI SONUÇLARI")
-    print("-------------------")
-    
-    for result in results:
-        print(f"{result['name']} Model: "
-              f"{result['accuracy']:.2f}% doğruluk, "
-              f"{result['time']:.2f} saniye")
-    
-    # Doğruluk bazlı en iyi model
-    best_accuracy_model = max(results, key=lambda x: x['accuracy'])
-    print(f"\nEn yüksek doğruluk: {best_accuracy_model['name']} "
-          f"({best_accuracy_model['accuracy']:.2f}%)")
-    
-    # Hız bazlı en iyi model
-    sorted_by_time = sorted(results, key=lambda x: x['time'])
-    fastest_model = sorted_by_time[0]
-    print(f"En hızlı eğitim: {fastest_model['name']} "
-          f"({fastest_model['time']:.2f} saniye)")    # C) Seçilen modeli tam veri üzerinde eğit
-    print("\nSEÇİLEN MODELİ GERÇEK VERİLERDE EĞİTME")
-    print("-" * 40)
-    
-    # En iyi doğruluk/hız dengesini bul
-    for result in results:
-        result['speed_score'] = (result['accuracy'] / 
-                                (result['time'] / min(r['time'] for r in results)))
-    
-    # En iyi modeli seç (doğruluk öncelikli) - Standart modeli seçiyoruz
-    best_model = next((r for r in results if r['type'] == 'standard'), results[0])
-    print(f"Seçilen model: {best_model['name']} "
-          f"(Doğruluk: {best_model['accuracy']:.2f}%, "
-          f"Hız skoru: {best_model['speed_score']:.2f})")
-    
-    # Ana modeli oluştur ve eğit
-    print(f"\nStandart model tam veri üzerinde eğitiliyor...")
+    # Modeli oluştur
     star_net = build_star_model(
         n_features, n_classes,
-        model_type='standard',
-        rank=16,
         neurons1=256,
         neurons2=128,
+        neurons3=64,
         dropout1=0.3,
         dropout2=0.3,
+        dropout3=0.3,
         learning_rate=0.001
     )
     
-    # Tam veri üzerinde eğit
+    # Gelişmiş stratejileri kullanarak eğit
     star_net, history = train_star_model(
-        star_net, 
-        Xs_tr, ys_tr,
-        Xs_val, ys_val,
+        star_net, Xs_tr, ys_tr, Xs_val, ys_val, 
         class_weights=cw_dict,
-        max_samples=None,  # Tüm verileri kullan
         batch_size=128,
         epochs=20,
         use_cyclic_lr=True,
         use_trending_early_stop=True
     )
     
-    # Test doğruluğunu değerlendir
-    star_acc = (star_net.predict(Xs_te).argmax(1)==ys_te.argmax(1)).mean()*100
+    # Test doğruluğunu hesapla
+    star_acc = (star_net.predict(Xs_te).argmax(1) == ys_te.argmax(1)).mean() * 100
     print(f"\nSTAR subtype Test Acc: {star_acc:.2f}%")
     
     # Modeli kaydet
@@ -263,11 +172,7 @@ def main():
     joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
     joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
     
-    # Tüm modelleri de kaydet (opsiyonel)
-    for result in results:
-        model_path = f"{out_dir}/{result['type']}_star_model.keras"
-        result['model'].save(model_path)
-        print(f"{result['name']} model kaydedildi: {model_path}")    # ------------------ helper for UI / further use -----------------
+    # ------------------ helper for UI / further use -----------------
     global full_predict
     def full_predict(sample_array):
         """Return GALAXY/QSO/STAR‑subtype for each input row (2‑stage)."""
@@ -296,17 +201,15 @@ def main():
     print("\nÖnemli dosyalar:")
     print(f"- {out_dir}/dnn_model.keras: Ana DNN modeli")
     print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
-    print(f"- {out_dir}/star_model.keras: Seçilen yıldız alt tür modeli")
-    for result in results:
-        print(f"- {out_dir}/{result['type']}_star_model.keras: {result['name']} yıldız modeli")
+    print(f"- {out_dir}/star_model.keras: Yıldız alt tür modeli")
     
     # Modelinizi kullanmak için:
     print("\nBu modeli kullanmak için:")
-    print(">>> from main import full_predict")
+    print(">>> from main_standard import full_predict")
     print(">>> sonuclar = full_predict(yeni_veriler)")
 
 def run_bayesian_optimization():
-    """Bayesian optimizasyonu çalıştır (ayrı bir işlev olarak)"""
+    """Bayesian optimizasyonu çalıştır (standart model için)"""
     try:
         # scikit-optimize kütüphanesini kontrol et ve yükle
         try:

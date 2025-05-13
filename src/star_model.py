@@ -1,157 +1,41 @@
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input, Layer, concatenate, Activation
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
 
-# Ayrılabilir Tam Bağlantılı Katman (SeparableFC) Uygulaması
-class SeparableFC(Layer):
-    """
-    Ayrılabilir tam bağlantılı katman (Dense katmanının hafif versiyonu).
-    Parametre sayısını önemli ölçüde azaltır: input_dim * rank + rank * units
-    """
-    
-    def __init__(self, units, rank=8, activation=None, use_bias=True, **kwargs):
-        super(SeparableFC, self).__init__(**kwargs)
-        self.units = units
-        self.rank = rank  # Ayırma boyutu
-        self.activation = tf.keras.activations.get(activation)
-        self.use_bias = use_bias
-        
-    def build(self, input_shape):
-        input_dim = int(input_shape[-1])
-        
-        # İki küçük matris oluşturarak parametre sayısını azalt
-        # Standart FC: input_dim * units parametre
-        # Ayrılabilir FC: input_dim * rank + rank * units parametre
-        self.w1 = self.add_weight(
-            shape=(input_dim, self.rank),
-            initializer='glorot_uniform',
-            name='w1'
-        )
-        self.w2 = self.add_weight(
-            shape=(self.rank, self.units),
-            initializer='glorot_uniform',
-            name='w2'
-        )
-        
-        if self.use_bias:
-            self.bias = self.add_weight(
-                shape=(self.units,),
-                initializer='zeros',
-                name='bias'
-            )
-        self.built = True
-        
-    def call(self, inputs):
-        # İki adımda hesapla
-        x = tf.matmul(inputs, self.w1)  # (batch, input_dim) x (input_dim, rank)
-        x = tf.matmul(x, self.w2)       # (batch, rank) x (rank, units)
-        
-        if self.use_bias:
-            x = tf.nn.bias_add(x, self.bias)
-        
-        if self.activation is not None:
-            x = self.activation(x)
-        return x
-    
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.units)
-
-def build_star_model(input_dim: int, n_classes: int, model_type='standard', rank=16,
+def build_star_model(input_dim: int, n_classes: int, 
                     neurons1=256, neurons2=128, neurons3=64, 
                     dropout1=0.4, dropout2=0.4, dropout3=0.3,
-                    learning_rate=0.001):
+                    learning_rate=0.001, **kwargs):
     """
     Yıldız türlerini sınıflandırmak için derin sinir ağı modeli oluşturur.
     
     Parametreler:
     - input_dim: Giriş özelliklerinin boyutu
     - n_classes: Sınıf sayısı (çıkış nöronları)
-    - model_type: 'standard', 'lightweight', 'separable', veya 'tree'
-    - rank: Separable model için rank değeri
     - neurons1/2/3: Her katman için nöron sayıları
     - dropout1/2/3: Her katman için dropout oranları
     - learning_rate: Öğrenme oranı
+    - **kwargs: Geriye dönük uyumluluk için ek parametreler (kullanılmaz)
     
     Returns:
     - Derlenmiş model
     """
-    if model_type == 'lightweight':
-        # Hafif model (daha hızlı eğitim)
-        model = Sequential([
-            Input(shape=(input_dim,)),
-            Dense(neurons1, activation='relu', kernel_regularizer=l2(1e-4)),
-            BatchNormalization(),
-            Dropout(dropout1),
-            Dense(neurons2, activation='relu', kernel_regularizer=l2(1e-4)),
-            BatchNormalization(),
-            Dropout(dropout2),
-            Dense(n_classes, activation='softmax')
-        ])
-    elif model_type == 'separable':
-        # Ayrılabilir katmanlı model (en hafif)
-        model = Sequential([
-            Input(shape=(input_dim,)),
-            SeparableFC(neurons1, rank=rank),
-            Activation('relu'),
-            BatchNormalization(),
-            Dropout(dropout1),
-            
-            SeparableFC(neurons2, rank=rank),
-            Activation('relu'),
-            BatchNormalization(),
-            Dropout(dropout2),
-            
-            SeparableFC(n_classes, rank=rank, activation='softmax')
-        ])
-    elif model_type == 'tree':
-        # Ağaç yapılı mimari (domain bilgisini kullanır)
-        # Girdi
-        inputs = Input(shape=(input_dim,))
-        
-        # Özellik gruplarını ayır (astronomik veri için mantıklı)
-        # Renk indeksi özellikleri (u-g, g-r, r-i, i-z)
-        color_feats = Dense(64, activation='relu')(inputs)
-        color_feats = BatchNormalization()(color_feats)
-        color_feats = Dropout(dropout1)(color_feats)
-        
-        # Parlaklık özellikleri (u, g, r, i, z)
-        magnitude_feats = Dense(64, activation='relu')(inputs)
-        magnitude_feats = BatchNormalization()(magnitude_feats)
-        magnitude_feats = Dropout(dropout1)(magnitude_feats)
-        
-        # Diğer özellikler
-        other_feats = Dense(32, activation='relu')(inputs)
-        other_feats = BatchNormalization()(other_feats)
-        other_feats = Dropout(dropout1)(other_feats)
-        
-        # Alt özellikleri birleştir
-        combined = concatenate([color_feats, magnitude_feats, other_feats])
-        
-        # Çıktı katmanı
-        outputs = Dense(neurons2, activation='relu')(combined)
-        outputs = BatchNormalization()(outputs)
-        outputs = Dropout(dropout2)(outputs)
-        outputs = Dense(n_classes, activation='softmax')(outputs)
-        
-        # Model oluştur
-        model = Model(inputs=inputs, outputs=outputs)
-    else:
-        # Standart model (orijinal, tam kapasite)
-        model = Sequential([
-            Input(shape=(input_dim,)),
-            Dense(neurons1, activation='relu', kernel_regularizer=l2(1e-4)),
-            BatchNormalization(),
-            Dropout(dropout1),
-            Dense(neurons2, activation='relu', kernel_regularizer=l2(1e-4)),
-            BatchNormalization(), 
-            Dropout(dropout2),
-            Dense(neurons3, activation='relu', kernel_regularizer=l2(1e-4)),
-            BatchNormalization(),
-            Dropout(dropout3),
-            Dense(n_classes, activation='softmax')
-        ])
+    # Standart model (yüksek performanslı model)
+    model = Sequential([
+        Input(shape=(input_dim,)),
+        Dense(neurons1, activation='relu', kernel_regularizer=l2(1e-4)),
+        BatchNormalization(),
+        Dropout(dropout1),
+        Dense(neurons2, activation='relu', kernel_regularizer=l2(1e-4)),
+        BatchNormalization(), 
+        Dropout(dropout2),
+        Dense(neurons3, activation='relu', kernel_regularizer=l2(1e-4)),
+        BatchNormalization(),
+        Dropout(dropout3),
+        Dense(n_classes, activation='softmax')
+    ])
     
     model.compile(
         optimizer=Adam(learning_rate=learning_rate),

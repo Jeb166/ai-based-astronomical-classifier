@@ -22,7 +22,7 @@ from download_data import check_data_files
 # Optimizasyon fonksiyonumuz
 def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     """
-    Bayesian optimizasyonu kullanarak star modeli hiperparametrelerini optimizasyon yapar
+    Bayesian optimizasyonu kullanarak standart modelin hiperparametrelerini optimize eder
     
     Parametreler:
     - n_trials: Deneme sayısı
@@ -57,33 +57,33 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     n_classes = y_train.shape[1]
     
     print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-      # Parametre uzayını tanımla - Sadece standart model için
+    
+    # Parametre uzayını tanımla - Sadece standart model parametreleri
     param_space = [
-        # Sadece standart modeli kullanıyoruz
-        Categorical(['standard'], name='model_type'),
-        Integer(8, 32, name='rank'),  # Artık kullanılmıyor ama yapı için bırakıldı
         Integer(128, 512, name='neurons1'),
         Integer(64, 256, name='neurons2'),
+        Integer(32, 128, name='neurons3'),
         Real(0.2, 0.5, name='dropout1'),
         Real(0.2, 0.5, name='dropout2'),
+        Real(0.2, 0.5, name='dropout3'),
         Real(1e-5, 1e-2, prior='log-uniform', name='learning_rate'),
         Integer(64, 256, name='batch_size')
     ]
     
     # Optimizasyon için objektif fonksiyon
     @use_named_args(param_space)
-    def objective(model_type, rank, neurons1, neurons2, dropout1, dropout2, learning_rate, batch_size):
+    def objective(neurons1, neurons2, neurons3, dropout1, dropout2, dropout3, learning_rate, batch_size):
         """
         Her hiperparametre seti için modeli eğitir ve doğrulama doğruluğunu döndürür.
         Minimum'a optimizasyon yaptığımız için negatif doğruluk döndürürüz.
         """
         params = {
-            'model_type': model_type,
-            'rank': rank,
             'neurons1': neurons1,
             'neurons2': neurons2,
+            'neurons3': neurons3,
             'dropout1': dropout1,
             'dropout2': dropout2,
+            'dropout3': dropout3,
             'learning_rate': learning_rate,
             'batch_size': batch_size
         }
@@ -92,7 +92,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         # Model için parametreleri hazırla (batch_size hariç)
         model_params = {k: v for k, v in params.items() if k != 'batch_size'}
         
-        # Modeli oluştur - batch_size parametresini ÇIKARIYORUZ
+        # Modeli oluştur
         model = build_star_model(
             input_dim=n_features, 
             n_classes=n_classes,
@@ -122,8 +122,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         # Doğrulama doğruluğunu hesapla
         val_accuracy = max(history.history['val_categorical_accuracy'])
         
-        print(f"Model tipi: {params['model_type']}, "
-              f"Doğrulama doğruluğu: {val_accuracy:.4f}, "
+        print(f"Doğrulama doğruluğu: {val_accuracy:.4f}, "
               f"Eğitim süresi: {training_time:.1f} saniye")
         
         # Minimizasyon için negatif doğruluk
@@ -156,7 +155,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     best_model = build_star_model(
         input_dim=n_features, 
         n_classes=n_classes,
-        **model_params  # batch_size bu parametrelerin içinde olmayacak
+        **model_params
     )
     
     best_model, _ = train_star_model(
@@ -178,12 +177,15 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     # En iyi modeli kaydet
     model_path = os.path.join(save_dir, "bayesian_optimized_star_model.keras")
     best_model.save(model_path)
-    print(f"En iyi model kaydedildi: {model_path}")    # Optimizasyon sonuçlarını kaydet (pickle sorunu yaşamadan)
+    print(f"En iyi model kaydedildi: {model_path}")
+    
+    # Optimizasyon sonuçlarını kaydet (pickle sorunu yaşamadan)
     optimization_info = {
         'best_params': best_params,
         'best_score': -result.fun,  # Negative because we minimize -accuracy
         'func_vals': [-v for v in result.func_vals.tolist()],  # Original accuracy values
-        'n_calls': len(result.func_vals)
+        'n_calls': len(result.func_vals),
+        'test_accuracy': test_accuracy
     }
     
     # JSON formatında kaydet (daha güvenli)
@@ -227,7 +229,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
         
         # En önemli parametreleri göster
         fig, ax = plt.subplots(1, figsize=(12, 8))
-        plot_objective(result, dimensions=['model_type', 'neurons1', 'dropout1', 'learning_rate'])
+        plot_objective(result, dimensions=['neurons1', 'neurons2', 'dropout1', 'learning_rate'])
         plt.title("Bayesian Optimizasyon - Parametre Önemlilikleri")
         plt.tight_layout()
         plt.savefig(os.path.join(save_dir, "bayesian_parameter_importance.png"), dpi=150)
@@ -252,8 +254,8 @@ if __name__ == "__main__":
     
     # Veri dosyalarını kontrol et
     if check_data_files():
-        # Bayesian optimizasyonu çalıştır - daha az deneme ile
-        print("\nSadece standart model için Bayesian optimizasyonu çalıştırılıyor...")
+        # Bayesian optimizasyonu çalıştır
+        print("\nStandart model için Bayesian optimizasyonu çalıştırılıyor...")
         optimize_star_model_bayesian(n_trials=10)
     else:
         print("\nOptimizasyon iptal edildi. Lütfen eksik veri dosyalarını 'data/' klasörüne yükleyin.")
