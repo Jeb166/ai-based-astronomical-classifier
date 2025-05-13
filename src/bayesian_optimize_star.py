@@ -20,9 +20,8 @@ from star_model import build_star_model, train_star_model
 from download_data import check_data_files
 
 # Optimizasyon fonksiyonumuz
-def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
-    """
-    Bayesian optimizasyonu kullanarak standart modelin hiperparametrelerini optimize eder
+def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):    """
+    Bayesian optimizasyonu kullanarak yıldız modelinin hiperparametrelerini optimize eder
     
     Parametreler:
     - n_trials: Deneme sayısı
@@ -57,8 +56,7 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):
     n_classes = y_train.shape[1]
     
     print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-    
-    # Parametre uzayını tanımla - Sadece standart model parametreleri
+      # Parametre uzayını tanımla
     param_space = [
         Integer(128, 512, name='neurons1'),
         Integer(64, 256, name='neurons2'),
@@ -255,7 +253,7 @@ if __name__ == "__main__":
     # Veri dosyalarını kontrol et
     if check_data_files():
         # Bayesian optimizasyonu çalıştır
-        print("\nStandart model için Bayesian optimizasyonu çalıştırılıyor...")
+        print("\nYıldız modeli için Bayesian optimizasyonu çalıştırılıyor...")
         optimize_star_model_bayesian(n_trials=10)
     else:
         print("\nOptimizasyon iptal edildi. Lütfen eksik veri dosyalarını 'data/' klasörüne yükleyin.")

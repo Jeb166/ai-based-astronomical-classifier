@@ -129,16 +129,15 @@ def main():
     y_int = ys_tr.argmax(1)
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
     cw_dict = dict(enumerate(cw))
-    
-    # B) Standart model eğitimi
-    print("\nSTANDART MODEL EĞİTİMİ")
+      # B) Yıldız Modeli Eğitimi
+    print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
     print("-" * 40)
     
     # Model boyutları
     n_features = Xs_tr.shape[1]
     n_classes = ys_tr.shape[1]
     
-    print("Standart model eğitiliyor...")
+    print("Yıldız modeli eğitiliyor...")
     print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
     
     # Modeli oluştur
@@ -209,7 +208,7 @@ def main():
     print(">>> sonuclar = full_predict(yeni_veriler)")
 
 def run_bayesian_optimization():
-    """Bayesian optimizasyonu çalıştır (standart model için)"""
+    """Bayesian optimizasyonu çalıştır"""
     try:
         # scikit-optimize kütüphanesini kontrol et ve yükle
         try:
@@ -221,29 +220,101 @@ def run_bayesian_optimization():
             subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
             print("scikit-optimize başarıyla yüklendi!")
         
-        from bayesian_optimize_star import optimize_star_model_bayesian
-        
+        # Bayesian optimizasyon için iki seçenek sun
         print("\n" + "="*70)
-        print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
+        print("BAYESIAN OPTİMİZASYON SEÇENEKLERİ".center(70))
         print("="*70)
+        print("1. Mevcut en iyi parametrelerle modeli eğit (hızlı)")
+        print("2. Yeni Bayesian optimizasyon iterasyonları çalıştır (yavaş)")
         
-        # Bayesian optimizasyonu çalıştır - Sadece standart model için
-        print("\nStandart model için Bayesian optimizasyon çalıştırılıyor...")
-        model, best_params, result = optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
+        try:
+            option = int(input("\nSeçiminiz (1/2) [varsayılan=1]: ") or "1")
+        except ValueError:
+            option = 1
+            print("Geçersiz seçim, varsayılan olarak mevcut parametrelerle eğitilecek.")
         
-        # En iyi parametreleri raporla
-        if best_params:
-            print("\nEN İYİ HİPERPARAMETRELER:")
-            print("-" * 40)
-            for param, value in best_params.items():
-                print(f"{param}: {value}")
+        if option == 2:
+            # Tam optimizasyon çalıştırmak istiyorsa
+            from bayesian_optimize_star import optimize_star_model_bayesian
+            print("\n" + "="*70)
+            print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
+            print("="*70)
             
-            print(f"\nOptimize edilmiş model kaydedildi: outputs/bayesian_optimized_star_model.keras")
+            print("\nYıldız modeli için Bayesian optimizasyon çalıştırılıyor...")
+            model, best_params, result = optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
+            
+            # En iyi parametreleri raporla
+            if best_params:
+                print("\nEN İYİ HİPERPARAMETRELER:")
+                print("-" * 40)
+                for param, value in best_params.items():
+                    print(f"{param}: {value}")
+                
+                print(f"\nOptimize edilmiş model kaydedildi: outputs/bayesian_optimized_star_model.keras")
+                print("Bu modeli kullanmak için:")
+                print(">>> from tensorflow.keras.models import load_model")
+                print(">>> model = load_model('outputs/bayesian_optimized_star_model.keras')")
+                print(">>> tahminler = model.predict(yeni_veriler)")
+            
+        else:
+            # Mevcut en iyi parametreleri kullan
+            from star_model import build_star_model, train_star_model
+            from prepare_data import load_star_subset
+            
+            print("\n" + "="*70)
+            print("EN İYİ PARAMETRELERLE YILDIZ MODELİ EĞİTİLİYOR".center(70))
+            print("="*70)
+            
+            # Veriyi yükle
+            print("Veri yükleniyor...")
+            data_path_star = 'data/star_subtypes.csv'
+            X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
+            
+            # Sınıf ağırlıklarını hesapla
+            y_int = y_train.argmax(1)
+            cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
+            cw_dict = dict(enumerate(cw))
+            
+            # En iyi parametreler `star_model.py` içinde varsayılan olarak tanımlanmıştır
+            # Modeli varsayılan parametrelerle oluştur
+            print("\nYıldız modeli varsayılan en iyi parametrelerle oluşturuluyor...")
+            
+            # Model boyutları
+            n_features = X_train.shape[1]
+            n_classes = y_train.shape[1]
+            
+            # Modeli oluştur (varsayılan optimum parametrelerle)
+            best_model = build_star_model(
+                input_dim=n_features, 
+                n_classes=n_classes
+            )
+            
+            # Modeli eğit
+            print("\nYıldız modeli eğitiliyor...")
+            best_model, _ = train_star_model(
+                best_model, 
+                X_train, y_train, 
+                X_val, y_val, 
+                class_weights=cw_dict,
+                batch_size=128,  # default batch size
+                epochs=20,
+                use_cyclic_lr=True,
+                use_trending_early_stop=True
+            )
+            
+            # Test doğruluğunu hesapla
+            test_preds = best_model.predict(X_test)
+            test_accuracy = (test_preds.argmax(1) == y_test.argmax(1)).mean() * 100
+            print(f"\nYıldız alt türleri test doğruluğu: {test_accuracy:.2f}%")
+            
+            # Modeli kaydet
+            best_model.save(f"outputs/optimized_star_model.keras")
+            print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
             print("Bu modeli kullanmak için:")
             print(">>> from tensorflow.keras.models import load_model")
-            print(">>> model = load_model('outputs/bayesian_optimized_star_model.keras')")
+            print(">>> model = load_model('outputs/optimized_star_model.keras')")
             print(">>> tahminler = model.predict(yeni_veriler)")
-        
+    
     except Exception as e:
         print(f"\nBayesian optimizasyon çalıştırılırken hata oluştu: {str(e)}")
         print("Ana model eğitimi başarıyla tamamlandı, optimizasyon adımı atlandı.")

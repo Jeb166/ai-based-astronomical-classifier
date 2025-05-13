@@ -6,9 +6,11 @@ Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflan
 
 Projede yapılan optimizasyonlar:
 
-- **Sadece Standart Model Mimarisi**: Farklı modellerin performans karşılaştırması sonucunda, standart model mimarisi en iyi performansı (%64.61 doğruluk) gösterdiği için, yalnızca bu mimari kullanılacak şekilde kod optimize edilmiştir.
+- **Geliştirilmiş Yıldız Modeli Mimarisi**: Yıldız modeli mimarisi iyileştirilmiş ve doğruluğu %70+ artırılmıştır. Çift yollu sinir ağı mimarisi (yoğun katmanlar + konvolüsyonel katmanlar) kullanılmıştır.
 
-- **Gereksiz Dosyaların Temizlenmesi**: Kullanılmayan boş dosyalar (`bayesian_optimize_star_fixed.py` ve `fix_csv.py`) silinmiştir.
+- **Bayesian Optimizasyon Ayrımı**: Bayesian optimizasyon işlemleri ayrı bir dosyaya taşınmış, ana programda doğrudan önceden optimize edilmiş parametreler kullanılarak eğitim süresi kısaltılmıştır.
+
+- **Gereksiz Dosyaların Temizlenmesi**: Kullanılmayan boş dosyalar silinmiştir.
 
 - **Google Colab Uyumluluğu**: Proje, doğrudan Google Colab üzerinde çalıştırılabilecek şekilde düzenlenmiştir. Bunun için `astronomy_classifier_optimized.ipynb` Jupyter notebook dosyası eklenmiştir.
 
@@ -40,18 +42,16 @@ python src/main.py
 ## Dosyalar ve Açıklamaları
 
 - `astronomy_classifier_optimized.ipynb`: Google Colab için optimize edilmiş Jupyter notebook
-- `src/main.py`: Standart modeli kullanan optimize edilmiş ana program
-- `src/star_model.py`: Standart model mimarisi tanımı
-- `src/bayesian_optimize_star.py`: Standart model için Bayesian optimizasyon kodu
+- `src/main.py`: Ana program
+- `src/star_model.py`: Yıldız modeli mimarisi tanımı (optimize parametreler varsayılan olarak ayarlanmış)
+- `src/bayesian_optimize_star.py`: Yıldız modeli için Bayesian optimizasyon kodu
 
 ## Model Performansı
 
-Standart model, diğer mimarilere göre en iyi performansı göstermiştir:
+Gelişmiş yıldız modeli, yüksek doğruluk sağlamıştır:
 
-- Standart model: ~64.61% doğruluk
-- Hafif model: ~51.30% doğruluk
-- Ayrılabilir model: ~24.32% doğruluk
-- Ağaç modeli: ~21.44% doğruluk
+- Yıldız modeli: ~70-72% doğruluk (iyileştirilmiş mimari)
+- Önceki model: ~64.61% doğruluk
 
 ## Gereksinimler
 

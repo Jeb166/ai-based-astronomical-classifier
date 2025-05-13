@@ -1,15 +1,17 @@
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Input, LeakyReLU
+from tensorflow.keras.layers import Concatenate, GlobalAveragePooling1D, Reshape, Conv1D
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import Adam
+import numpy as np
 
 def build_star_model(input_dim: int, n_classes: int, 
-                    neurons1=256, neurons2=128, neurons3=64, 
-                    dropout1=0.4, dropout2=0.4, dropout3=0.3,
-                    learning_rate=0.001, **kwargs):
+                    neurons1=434, neurons2=99, neurons3=107, 
+                    dropout1=0.379, dropout2=0.334, dropout3=0.230,
+                    learning_rate=0.00024, **kwargs):
     """
-    Yıldız türlerini sınıflandırmak için derin sinir ağı modeli oluşturur.
+    Yıldız türlerini sınıflandırmak için gelişmiş derin sinir ağı modeli oluşturur.
     
     Parametreler:
     - input_dim: Giriş özelliklerinin boyutu
@@ -22,21 +24,44 @@ def build_star_model(input_dim: int, n_classes: int,
     Returns:
     - Derlenmiş model
     """
-    # Standart model (yüksek performanslı model)
-    model = Sequential([
-        Input(shape=(input_dim,)),
-        Dense(neurons1, activation='relu', kernel_regularizer=l2(1e-4)),
-        BatchNormalization(),
-        Dropout(dropout1),
-        Dense(neurons2, activation='relu', kernel_regularizer=l2(1e-4)),
-        BatchNormalization(), 
-        Dropout(dropout2),
-        Dense(neurons3, activation='relu', kernel_regularizer=l2(1e-4)),
-        BatchNormalization(),
-        Dropout(dropout3),
-        Dense(n_classes, activation='softmax')
-    ])
+    # Giriş katmanı
+    inputs = Input(shape=(input_dim,))
     
+    # Ana yol - Derin bağlantılı katmanlar
+    x1 = Dense(neurons1, kernel_regularizer=l2(1e-4))(inputs)
+    x1 = LeakyReLU(alpha=0.1)(x1)
+    x1 = BatchNormalization()(x1)
+    x1 = Dropout(dropout1)(x1)
+    
+    x1 = Dense(neurons2, kernel_regularizer=l2(1e-4))(x1)
+    x1 = LeakyReLU(alpha=0.1)(x1)
+    x1 = BatchNormalization()(x1)
+    x1 = Dropout(dropout2)(x1)
+    
+    x1 = Dense(neurons3, kernel_regularizer=l2(1e-4))(x1)
+    x1 = LeakyReLU(alpha=0.1)(x1)
+    x1 = BatchNormalization()(x1)
+    x1 = Dropout(dropout3)(x1)
+    
+    # İkinci yol - Öznitelik dönüşümü (1D konvolüsyon)
+    reshaped = Reshape((input_dim, 1))(inputs)
+    x2 = Conv1D(32, kernel_size=3, padding='same', activation='relu', kernel_regularizer=l2(1e-4))(reshaped)
+    x2 = BatchNormalization()(x2)
+    x2 = Conv1D(16, kernel_size=3, padding='same', activation='relu', kernel_regularizer=l2(1e-4))(x2)
+    x2 = BatchNormalization()(x2)
+    x2 = GlobalAveragePooling1D()(x2)
+    x2 = Dropout(0.3)(x2)
+    
+    # İki yolu birleştir
+    merged = Concatenate()([x1, x2])
+    
+    # Son katman
+    outputs = Dense(n_classes, activation='softmax')(merged)
+    
+    # Model oluştur
+    model = Model(inputs=inputs, outputs=outputs)
+    
+    # Derleme
     model.compile(
         optimizer=Adam(learning_rate=learning_rate),
         loss='categorical_crossentropy',
@@ -133,15 +158,15 @@ def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None,
         callbacks.append(
             EarlyStopping(
                 monitor='val_categorical_accuracy',
-                patience=3,
+                patience=5,  # Daha uzun bir süre bekliyoruz
                 restore_best_weights=True
             )
         )
     
     # 2. Döngüsel öğrenme oranı
     if use_cyclic_lr:
-        def cyclic_learning_rate(epoch, min_lr=1e-5, max_lr=1e-3, cycle_length=5):
-            """Döngüsel öğrenme oranı planı"""
+        def cyclic_learning_rate(epoch, min_lr=1e-6, max_lr=1e-3, cycle_length=8):
+            """Geliştirilmiş döngüsel öğrenme oranı planı"""
             # Döngü içindeki mevcut konum (0 ile 1 arasında)
             cycle_progress = (epoch % cycle_length) / cycle_length
             
@@ -162,7 +187,7 @@ def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None,
             ReduceLROnPlateau(
                 monitor='val_loss',
                 factor=0.5,
-                patience=2,
+                patience=3,  # Daha uzun bir sabır değeri
                 min_lr=1e-6,
                 verbose=1
             )
