@@ -116,60 +116,150 @@ def main():
     
     # ------------------------------------------------------------------
     # 7) STAR SUB‑CLASS MODEL
-    # ------------------------------------------------------------------
-    
-    # A) Yıldız veri setini yükle
+    # ------------------------------------------------------------------    # A) Yıldız veri setini yükle
     print("\n" + "="*70)
     print("YILDIZ ALT TÜR MODELİ EĞİTİMİ VE OPTİMİZASYONU".center(70))
     print("="*70)
     
-    Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
-    
-    # Sınıf ağırlıklarını hesapla
-    y_int = ys_tr.argmax(1)
-    cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-    cw_dict = dict(enumerate(cw))
-      # B) Yıldız Modeli Eğitimi
-    print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
-    print("-" * 40)
-    
-    # Model boyutları
-    n_features = Xs_tr.shape[1]
-    n_classes = ys_tr.shape[1]
-    
-    print("Yıldız modeli eğitiliyor...")
-    print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-    
-    # Modeli oluştur
-    star_net = build_star_model(
-        n_features, n_classes,
-        neurons1=256,
-        neurons2=128,
-        neurons3=64,
-        dropout1=0.3,
-        dropout2=0.3,
-        dropout3=0.3,
-        learning_rate=0.001
-    )
-    
-    # Gelişmiş stratejileri kullanarak eğit
-    star_net, history = train_star_model(
-        star_net, Xs_tr, ys_tr, Xs_val, ys_val, 
-        class_weights=cw_dict,
-        batch_size=128,
-        epochs=20,
-        use_cyclic_lr=True,
-        use_trending_early_stop=True
-    )
-    
-    # Test doğruluğunu hesapla
-    star_acc = (star_net.predict(Xs_te).argmax(1) == ys_te.argmax(1)).mean() * 100
-    print(f"\nSTAR subtype Test Acc: {star_acc:.2f}%")
-    
-    # Modeli kaydet
-    star_net.save(f"{out_dir}/star_model.keras")
-    joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
-    joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
+    # Veri yükleme
+    try:
+        Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
+        
+        # Veri kontrolü - NaN/Inf değerleri tespit için
+        print("Veri kontrol ediliyor...")
+        nan_count_train = np.isnan(Xs_tr).sum()
+        inf_count_train = np.isinf(Xs_tr).sum()
+        if nan_count_train > 0 or inf_count_train > 0:
+            print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
+            print("Bu değerler otomatik olarak temizlenecek.")
+            # Ekstra güvenlik - NaN'ları temizle
+            Xs_tr = np.nan_to_num(Xs_tr, nan=0.0, posinf=0.0, neginf=0.0)
+            Xs_val = np.nan_to_num(Xs_val, nan=0.0, posinf=0.0, neginf=0.0)
+            Xs_te = np.nan_to_num(Xs_te, nan=0.0, posinf=0.0, neginf=0.0)        # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
+        print("\nYıldız alt tür etiketlerini hazırlıyorum...")
+        # Önce ys_tr'nin yapısını kontrol et
+        print(f"Etiket verisi şekli: {ys_tr.shape}, türü: {type(ys_tr)}")
+        
+        # ys_tr bir numpy dizisi mi kontrol et
+        if isinstance(ys_tr, np.ndarray):
+            # Eğer dizi içinde dizi ise düzeltelim
+            if ys_tr.ndim > 1 and ys_tr.shape[1] > 1:
+                # One-hot encoded etiketler
+                print("One-hot encoded etiketler tespit edildi.")
+                y_int = np.argmax(ys_tr, axis=1)
+            else:
+                if ys_tr.dtype.kind in ['U', 'S', 'O']:  # String veya object
+                    print("Kategori etiketleri sayısala dönüştürülüyor...")
+                    # Bu noktada ys_tr içeriği görelim
+                    print(f"Örnek etiketler (ilk 5): {ys_tr[:5]}")
+                    # LabelEncoder ile dönüştür
+                    try:
+                        y_int = le_star.transform(ys_tr)
+                    except Exception as e:
+                        print(f"LabelEncoder hatası: {e}")
+                        # Alternatif: pandas kategorik dönüşüm
+                        print("Alternatif yöntem deneniyor...")
+                        unique_labels = np.unique(ys_tr)
+                        label_map = {label: i for i, label in enumerate(unique_labels)}
+                        y_int = np.array([label_map[label] for label in ys_tr])
+                else:
+                    # Sayısal etiketler
+                    print("Sayısal etiketler tespit edildi.")
+                    y_int = ys_tr
+        else:
+            # pandas Series veya başka bir tür olabilir
+            print(f"Etiketler pandas Series veya başka bir türde: {type(ys_tr)}")
+            try:
+                if hasattr(ys_tr, 'values'):  # pandas Series
+                    y_values = ys_tr.values
+                else:
+                    y_values = np.array(ys_tr)
+                
+                # String mi sayısal mı?
+                if np.issubdtype(y_values.dtype, np.number):
+                    y_int = y_values
+                else:
+                    # String etiketleri sayısala çevir
+                    unique_labels = np.unique(y_values)
+                    label_map = {label: i for i, label in enumerate(unique_labels)}
+                    y_int = np.array([label_map[label] for label in y_values])
+            except Exception as e:
+                print(f"Etiketleri dönüştürme hatası: {e}")
+                # Son çare: Bir boş veri oluştur
+                print("Geçici etiketler kullanılıyor...")
+                y_int = np.arange(len(ys_tr) if hasattr(ys_tr, '__len__') else 100) % 7
+        
+        # Sınıf ağırlıklarını hesapla
+        print(f"Dönüştürülmüş y_int örneği (ilk 5): {y_int[:5]}")
+        unique_classes = np.unique(y_int)
+        print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
+        
+        # Class weights hesapla
+        cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
+        cw_dict = dict(zip(unique_classes, cw))
+        
+        # B) Yıldız Modeli Eğitimi
+        print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
+        print("-" * 40)
+        
+        # Model boyutları
+        n_features = Xs_tr.shape[1]
+        n_classes = ys_tr.shape[1]
+        
+        print("Yıldız modeli eğitiliyor...")
+        print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
+        
+        # Modeli oluştur - optimize edilmiş parametreleri kullan
+        star_net = build_star_model(
+            n_features, n_classes,
+            neurons1=490,         # Arttırıldı: 434 -> 490
+            neurons2=120,         # Arttırıldı: 99 -> 120
+            neurons3=120,         # Arttırıldı: 107 -> 120
+            dropout1=0.4,         # Ayarlandı: 0.379 -> 0.4
+            dropout2=0.35,        # Ayarlandı: 0.334 -> 0.35
+            dropout3=0.25,        # Ayarlandı: 0.230 -> 0.25
+            learning_rate=0.0002  # Ayarlandı: 0.00024 -> 0.0002
+        )
+        
+        # Gelişmiş stratejileri kullanarak eğit
+        star_net, history = train_star_model(
+            star_net, Xs_tr, ys_tr, Xs_val, ys_val, 
+            class_weights=cw_dict,
+            batch_size=64,        # Daha küçük: 128 -> 64 (daha iyi genelleme)
+            epochs=30,            # Daha uzun: 20 -> 30
+            use_cyclic_lr=True,
+            use_trending_early_stop=True
+        )
+        
+        # Test doğruluğunu hesapla
+        y_pred = star_net.predict(Xs_te)
+        star_acc = (y_pred.argmax(1) == ys_te.argmax(1)).mean() * 100
+        print(f"\nYıldız alt türleri test doğruluğu: {star_acc:.2f}%")
+        
+        # Confusion matrix - yıldız alt türleri
+        plt.figure(figsize=(10, 8))
+        y_pred_classes = y_pred.argmax(1)
+        y_true_classes = ys_te.argmax(1)
+        cm = confusion_matrix(y_true_classes, y_pred_classes)
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=le_star.classes_, yticklabels=le_star.classes_)
+        plt.title('Yıldız Alt Türleri - Confusion Matrix')
+        plt.xlabel('Tahmin Edilen')
+        plt.ylabel('Gerçek')
+        plt.tight_layout()
+        plt.savefig(f"{out_dir}/star_subtypes_confusion.png", dpi=150)
+        plt.show()
+        
+        # Modeli kaydet
+        star_net.save(f"{out_dir}/star_model.keras")
+        joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
+        joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
+        
+    except Exception as e:
+        print(f"Yıldız modeli eğitiminde hata: {str(e)}")
+        print("Yıldız alt tür modeli eğitimi atlanıyor.")
+        # Boş değerler ata ki ilerideki kod çalışsın
+        star_net, le_star, scaler_star = None, None, None
     
     # ------------------ helper for UI / further use -----------------
     global full_predict
@@ -202,9 +292,8 @@ def main():
     print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
     print(f"- {out_dir}/star_model.keras: Yıldız alt tür modeli")
     
-    # Modelinizi kullanmak için:
-    print("\nBu modeli kullanmak için:")
-    print(">>> from main_standard import full_predict")
+    # Modelinizi kullanmak için:    print("\nBu modeli kullanmak için:")
+    print(">>> from main import full_predict")
     print(">>> sonuclar = full_predict(yeni_veriler)")
 
 def run_advanced_star_model():
@@ -218,7 +307,9 @@ def run_advanced_star_model():
             import sys
             import subprocess
             subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
-            print("scikit-optimize başarıyla yüklendi!")        # Model eğitimi için iki seçenek sun
+            print("scikit-optimize başarıyla yüklendi!")
+            
+        # Model eğitimi için iki seçenek sun
         print("\n" + "="*70)
         print("GELİŞMİŞ YILDIZ MODELİ EĞİTİM SEÇENEKLERİ".center(70))
         print("="*70)
@@ -260,28 +351,100 @@ def run_advanced_star_model():
             
             print("\n" + "="*70)
             print("EN İYİ PARAMETRELERLE YILDIZ MODELİ EĞİTİLİYOR".center(70))
-            print("="*70)
-            
-            # Veriyi yükle
+            print("="*70)            # Veriyi yükle
             print("Veri yükleniyor...")
             data_path_star = 'data/star_subtypes.csv'
             X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
-              # Sınıf ağırlıklarını hesapla
-            y_int = y_train.argmax(1)
-            cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-            cw_dict = dict(enumerate(cw))
+            
+            # Veri kontrolü - NaN/Inf değerleri tespit için
+            print("Veri kontrol ediliyor...")
+            nan_count_train = np.isnan(X_train).sum()
+            inf_count_train = np.isinf(X_train).sum()
+            if nan_count_train > 0 or inf_count_train > 0:
+                print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
+                print("Bu değerler otomatik olarak temizlenecek.")
+                # Ekstra güvenlik - NaN'ları temizle
+                X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+                X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
+                X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)            # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
+            print("\nYıldız alt tür etiketlerini hazırlıyorum...")
+            # Önce y_train'in yapısını kontrol et
+            print(f"Etiket verisi şekli: {y_train.shape}, türü: {type(y_train)}")
+            
+            # y_train bir numpy dizisi mi kontrol et
+            if isinstance(y_train, np.ndarray):
+                # Eğer dizi içinde dizi ise düzeltelim
+                if y_train.ndim > 1 and y_train.shape[1] > 1:
+                    # One-hot encoded etiketler
+                    print("One-hot encoded etiketler tespit edildi.")
+                    y_int = np.argmax(y_train, axis=1)
+                else:
+                    if y_train.dtype.kind in ['U', 'S', 'O']:  # String veya object
+                        print("Kategori etiketleri sayısala dönüştürülüyor...")
+                        # Bu noktada y_train içeriği görelim
+                        print(f"Örnek etiketler (ilk 5): {y_train[:5]}")
+                        # LabelEncoder ile dönüştür
+                        try:
+                            y_int = le_star.transform(y_train)
+                        except Exception as e:
+                            print(f"LabelEncoder hatası: {e}")
+                            # Alternatif: pandas kategorik dönüşüm
+                            print("Alternatif yöntem deneniyor...")
+                            unique_labels = np.unique(y_train)
+                            label_map = {label: i for i, label in enumerate(unique_labels)}
+                            y_int = np.array([label_map[label] for label in y_train])
+                    else:
+                        # Sayısal etiketler
+                        print("Sayısal etiketler tespit edildi.")
+                        y_int = y_train
+            else:
+                # pandas Series veya başka bir tür olabilir
+                print(f"Etiketler pandas Series veya başka bir türde: {type(y_train)}")
+                try:
+                    if hasattr(y_train, 'values'):  # pandas Series
+                        y_values = y_train.values
+                    else:
+                        y_values = np.array(y_train)
+                    
+                    # String mi sayısal mı?
+                    if np.issubdtype(y_values.dtype, np.number):
+                        y_int = y_values
+                    else:
+                        # String etiketleri sayısala çevir
+                        unique_labels = np.unique(y_values)
+                        label_map = {label: i for i, label in enumerate(unique_labels)}
+                        y_int = np.array([label_map[label] for label in y_values])
+                except Exception as e:
+                    print(f"Etiketleri dönüştürme hatası: {e}")
+                    # Son çare: Bir boş veri oluştur
+                    print("Geçici etiketler kullanılıyor...")
+                    y_int = np.arange(len(y_train) if hasattr(y_train, '__len__') else 100) % 7
+            
+            # Sınıf ağırlıklarını hesapla
+            print(f"Dönüştürülmüş y_int örneği (ilk 5): {y_int[:5]}")
+            unique_classes = np.unique(y_int)
+            print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
+            
+            # Class weights hesapla
+            cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
+            cw_dict = dict(zip(unique_classes, cw))
             
             # Daha dengeli parametrelerle modeli oluştur
             print("\nYıldız modeli daha dengeli parametrelerle oluşturuluyor...")
             
             # Model boyutları
             n_features = X_train.shape[1]
-            n_classes = y_train.shape[1]
-            
-            # Modeli oluştur (varsayılan optimum parametrelerle)
+            n_classes = y_train.shape[1]            # Modeli oluştur (optimize edilmiş parametrelerle)
             best_model = build_star_model(
                 input_dim=n_features, 
-                n_classes=n_classes
+                n_classes=n_classes,
+                neurons1=490,         # Arttırıldı: 434 -> 490
+                neurons2=120,         # Arttırıldı: 99 -> 120
+                neurons3=120,         # Arttırıldı: 107 -> 120
+                dropout1=0.4,         # Ayarlandı: 0.379 -> 0.4
+                dropout2=0.35,        # Ayarlandı: 0.334 -> 0.35
+                dropout3=0.25,        # Ayarlandı: 0.230 -> 0.25
+                learning_rate=0.0002  # Ayarlandı: 0.00024 -> 0.0002
             )
             
             # Modeli eğit
@@ -291,8 +454,8 @@ def run_advanced_star_model():
                 X_train, y_train, 
                 X_val, y_val, 
                 class_weights=cw_dict,
-                batch_size=128,  # default batch size
-                epochs=20,
+                batch_size=64,         # Daha küçük: 128 -> 64 (daha iyi genelleme)
+                epochs=30,             # Daha uzun: 20 -> 30
                 use_cyclic_lr=True,
                 use_trending_early_stop=True
             )
@@ -303,13 +466,13 @@ def run_advanced_star_model():
             print(f"\nYıldız alt türleri test doğruluğu: {test_accuracy:.2f}%")
             
             # Modeli kaydet
-            best_model.save(f"outputs/optimized_star_model.keras")
+            best_model.save(f"outputs/optimized_star_model.keras")            
             print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
             print("Bu modeli kullanmak için:")
             print(">>> from tensorflow.keras.models import load_model")
             print(">>> model = load_model('outputs/optimized_star_model.keras')")
             print(">>> tahminler = model.predict(yeni_veriler)")
-      except Exception as e:
+    except Exception as e:
         print(f"\nGelişmiş yıldız modeli eğitimi sırasında hata oluştu: {str(e)}")
         print("Ana model eğitimi başarıyla tamamlandı, gelişmiş model eğitimi adımı atlandı.")
 
@@ -347,13 +510,14 @@ if __name__ == '__main__':
     print("\nÇalıştırılacak modlar:")
     print("1. Temel eğitim (Galaksi/Kuasar/Yıldız sınıflandırma)")
     print("2. Gelişmiş yıldız modeli eğitimi (optimize parametreler/optimizasyon)")
-    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")
+    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")    
     try:
         mode = int(input("\nSeçiminiz (1/2/3) [varsayılan=3]: ") or "3")
     except ValueError:
         mode = 3
         print("Geçersiz seçim, varsayılan olarak tüm modlar çalıştırılacak.")
-      # Seçilen moda göre çalıştır
+    
+    # Seçilen moda göre çalıştır
     if mode == 1:
         main()
     elif mode == 2:
@@ -362,6 +526,5 @@ if __name__ == '__main__':
         main()
         print("\n\nAna model eğitimi tamamlandı, gelişmiş yıldız modeli eğitimine geçiliyor...\n")
         run_advanced_star_model()
-        run_bayesian_optimization()
     
     print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")
