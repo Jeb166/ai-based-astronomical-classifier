@@ -48,10 +48,10 @@ python src/main.py
 
 ## Model Performansı
 
-Gelişmiş yıldız modeli, yüksek doğruluk sağlamıştır:
+İyileştirilmiş mimari daha dengeli bir performans sağlamaktadır:
 
-- Yıldız modeli: ~70-72% doğruluk (iyileştirilmiş mimari)
-- Önceki model: ~64.61% doğruluk
+- Yıldız modeli: ~60-65% doğruluk (dengeli parametreler)
+- Temel sınıflandırma: ~99% doğruluk (galaksi/kuasar/yıldız)
 
 ## Gereksinimler
 

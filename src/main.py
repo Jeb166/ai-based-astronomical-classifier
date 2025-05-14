@@ -218,13 +218,12 @@ def run_advanced_star_model():
             import sys
             import subprocess
             subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
-            print("scikit-optimize başarıyla yüklendi!")
-          # Model eğitimi için iki seçenek sun
+            print("scikit-optimize başarıyla yüklendi!")        # Model eğitimi için iki seçenek sun
         print("\n" + "="*70)
         print("GELİŞMİŞ YILDIZ MODELİ EĞİTİM SEÇENEKLERİ".center(70))
         print("="*70)
-        print("1. Hazır optimize parametrelerle modeli eğit (hızlı, önerilen)")
-        print("2. Yeni Bayesian optimizasyon iterasyonları çalıştır (çok yavaş, deneysel)")
+        print("1. Dengeli parametrelerle modeli eğit (daha kararlı sonuçlar)")
+        print("2. Bayesian optimizasyon ile yeni parametreler bul (deneysel)")
         try:
             option = int(input("\nSeçiminiz (1/2) [varsayılan=1]: ") or "1")
         except ValueError:
@@ -267,15 +266,13 @@ def run_advanced_star_model():
             print("Veri yükleniyor...")
             data_path_star = 'data/star_subtypes.csv'
             X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
-            
-            # Sınıf ağırlıklarını hesapla
+              # Sınıf ağırlıklarını hesapla
             y_int = y_train.argmax(1)
             cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
             cw_dict = dict(enumerate(cw))
             
-            # En iyi parametreler `star_model.py` içinde varsayılan olarak tanımlanmıştır
-            # Modeli varsayılan parametrelerle oluştur
-            print("\nYıldız modeli varsayılan en iyi parametrelerle oluşturuluyor...")
+            # Daha dengeli parametrelerle modeli oluştur
+            print("\nYıldız modeli daha dengeli parametrelerle oluşturuluyor...")
             
             # Model boyutları
             n_features = X_train.shape[1]

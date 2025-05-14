@@ -7,9 +7,9 @@ from tensorflow.keras.optimizers import Adam
 import numpy as np
 
 def build_star_model(input_dim: int, n_classes: int, 
-                    neurons1=434, neurons2=99, neurons3=107, 
-                    dropout1=0.379, dropout2=0.334, dropout3=0.230,
-                    learning_rate=0.00024, **kwargs):
+                    neurons1=256, neurons2=128, neurons3=64, 
+                    dropout1=0.3, dropout2=0.3, dropout3=0.3,
+                    learning_rate=0.001, **kwargs):
     """
     Yıldız türlerini sınıflandırmak için gelişmiş derin sinir ağı modeli oluşturur.
     
@@ -42,15 +42,16 @@ def build_star_model(input_dim: int, n_classes: int,
     x1 = LeakyReLU(alpha=0.1)(x1)
     x1 = BatchNormalization()(x1)
     x1 = Dropout(dropout3)(x1)
-    
-    # İkinci yol - Öznitelik dönüşümü (1D konvolüsyon)
+      # İkinci yol - Öznitelik dönüşümü (1D konvolüsyon)
     reshaped = Reshape((input_dim, 1))(inputs)
-    x2 = Conv1D(32, kernel_size=3, padding='same', activation='relu', kernel_regularizer=l2(1e-4))(reshaped)
+    x2 = Conv1D(16, kernel_size=3, padding='same', kernel_regularizer=l2(1e-3))(reshaped)
     x2 = BatchNormalization()(x2)
-    x2 = Conv1D(16, kernel_size=3, padding='same', activation='relu', kernel_regularizer=l2(1e-4))(x2)
+    x2 = LeakyReLU(alpha=0.1)(x2)
+    x2 = Conv1D(8, kernel_size=3, padding='same', kernel_regularizer=l2(1e-3))(x2)
     x2 = BatchNormalization()(x2)
+    x2 = LeakyReLU(alpha=0.1)(x2)
     x2 = GlobalAveragePooling1D()(x2)
-    x2 = Dropout(0.3)(x2)
+    x2 = Dropout(0.4)(x2)
     
     # İki yolu birleştir
     merged = Concatenate()([x1, x2])
