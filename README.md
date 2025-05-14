@@ -34,7 +34,7 @@ cd ai-based-astronomical-classifier
 pip install -r requirements.txt
 ```
 
-3. Optimizasyon sonrası oluşturulan standart model sürümünü çalıştırın:
+3. Optimize edilmiş modeli çalıştırın:
 ```
 python src/main.py
 ```
