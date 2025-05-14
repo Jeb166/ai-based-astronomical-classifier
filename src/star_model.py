@@ -7,9 +7,9 @@ from tensorflow.keras.optimizers import Adam
 import numpy as np
 
 def build_star_model(input_dim: int, n_classes: int, 
-                    neurons1=256, neurons2=128, neurons3=64, 
-                    dropout1=0.3, dropout2=0.3, dropout3=0.3,
-                    learning_rate=0.001, **kwargs):
+                    neurons1=434, neurons2=99, neurons3=107, 
+                    dropout1=0.379, dropout2=0.334, dropout3=0.230,
+                    learning_rate=0.00024, **kwargs):
     """
     Yıldız türlerini sınıflandırmak için gelişmiş derin sinir ağı modeli oluşturur.
     
