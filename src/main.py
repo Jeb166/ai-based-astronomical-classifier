@@ -139,17 +139,16 @@ def main():
     
     print("Yıldız modeli eğitiliyor...")
     print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-    
-    # Modeli oluştur
+      # Modeli oluştur
     star_net = build_star_model(
         n_features, n_classes,
-        neurons1=256,
-        neurons2=128,
-        neurons3=64,
-        dropout1=0.3,
-        dropout2=0.3,
-        dropout3=0.3,
-        learning_rate=0.001
+        neurons1=434,
+        neurons2=99,
+        neurons3=107,
+        dropout1=0.379,
+        dropout2=0.334,
+        dropout3=0.230,
+        learning_rate=0.00024
     )
     
     # Gelişmiş stratejileri kullanarak eğit
@@ -161,10 +160,9 @@ def main():
         use_cyclic_lr=True,
         use_trending_early_stop=True
     )
-    
-    # Test doğruluğunu hesapla
+      # Test doğruluğunu hesapla
     star_acc = (star_net.predict(Xs_te).argmax(1) == ys_te.argmax(1)).mean() * 100
-    print(f"\nSTAR subtype Test Acc: {star_acc:.2f}%")
+    print(f"\nYıldız alt türleri test doğruluğu: {star_acc:.2f}%")
     
     # Modeli kaydet
     star_net.save(f"{out_dir}/star_model.keras")
@@ -202,9 +200,8 @@ def main():
     print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
     print(f"- {out_dir}/star_model.keras: Yıldız alt tür modeli")
     
-    # Modelinizi kullanmak için:
-    print("\nBu modeli kullanmak için:")
-    print(">>> from main_standard import full_predict")
+    # Modelinizi kullanmak için:    print("\nBu modeli kullanmak için:")
+    print(">>> from main import full_predict")
     print(">>> sonuclar = full_predict(yeni_veriler)")
 
 def run_advanced_star_model():
@@ -277,11 +274,17 @@ def run_advanced_star_model():
             # Model boyutları
             n_features = X_train.shape[1]
             n_classes = y_train.shape[1]
-            
-            # Modeli oluştur (varsayılan optimum parametrelerle)
+              # Modeli oluştur (optimize edilmiş parametrelerle)
             best_model = build_star_model(
                 input_dim=n_features, 
-                n_classes=n_classes
+                n_classes=n_classes,
+                neurons1=434,
+                neurons2=99,
+                neurons3=107,
+                dropout1=0.379,
+                dropout2=0.334,
+                dropout3=0.230,
+                learning_rate=0.00024
             )
             
             # Modeli eğit
@@ -303,13 +306,12 @@ def run_advanced_star_model():
             print(f"\nYıldız alt türleri test doğruluğu: {test_accuracy:.2f}%")
             
             # Modeli kaydet
-            best_model.save(f"outputs/optimized_star_model.keras")
-            print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
+            best_model.save(f"outputs/optimized_star_model.keras")            print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
             print("Bu modeli kullanmak için:")
             print(">>> from tensorflow.keras.models import load_model")
             print(">>> model = load_model('outputs/optimized_star_model.keras')")
             print(">>> tahminler = model.predict(yeni_veriler)")
-      except Exception as e:
+    except Exception as e:
         print(f"\nGelişmiş yıldız modeli eğitimi sırasında hata oluştu: {str(e)}")
         print("Ana model eğitimi başarıyla tamamlandı, gelişmiş model eğitimi adımı atlandı.")
 
@@ -347,13 +349,13 @@ if __name__ == '__main__':
     print("\nÇalıştırılacak modlar:")
     print("1. Temel eğitim (Galaksi/Kuasar/Yıldız sınıflandırma)")
     print("2. Gelişmiş yıldız modeli eğitimi (optimize parametreler/optimizasyon)")
-    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")
-    try:
+    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")    try:
         mode = int(input("\nSeçiminiz (1/2/3) [varsayılan=3]: ") or "3")
     except ValueError:
         mode = 3
         print("Geçersiz seçim, varsayılan olarak tüm modlar çalıştırılacak.")
-      # Seçilen moda göre çalıştır
+    
+    # Seçilen moda göre çalıştır
     if mode == 1:
         main()
     elif mode == 2:
@@ -362,6 +364,5 @@ if __name__ == '__main__':
         main()
         print("\n\nAna model eğitimi tamamlandı, gelişmiş yıldız modeli eğitimine geçiliyor...\n")
         run_advanced_star_model()
-        run_bayesian_optimization()
     
     print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")
