@@ -306,7 +306,8 @@ def run_advanced_star_model():
             print(f"\nYıldız alt türleri test doğruluğu: {test_accuracy:.2f}%")
             
             # Modeli kaydet
-            best_model.save(f"outputs/optimized_star_model.keras")            print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
+            best_model.save(f"outputs/optimized_star_model.keras")            
+            print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
             print("Bu modeli kullanmak için:")
             print(">>> from tensorflow.keras.models import load_model")
             print(">>> model = load_model('outputs/optimized_star_model.keras')")
@@ -349,7 +350,8 @@ if __name__ == '__main__':
     print("\nÇalıştırılacak modlar:")
     print("1. Temel eğitim (Galaksi/Kuasar/Yıldız sınıflandırma)")
     print("2. Gelişmiş yıldız modeli eğitimi (optimize parametreler/optimizasyon)")
-    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")    try:
+    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")    
+    try:
         mode = int(input("\nSeçiminiz (1/2/3) [varsayılan=3]: ") or "3")
     except ValueError:
         mode = 3
