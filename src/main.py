@@ -207,8 +207,8 @@ def main():
     print(">>> from main_standard import full_predict")
     print(">>> sonuclar = full_predict(yeni_veriler)")
 
-def run_bayesian_optimization():
-    """Bayesian optimizasyonu çalıştır"""
+def run_advanced_star_model():
+    """Gelişmiş yıldız modeli eğitimi ve optimizasyon seçeneklerini çalıştır"""
     try:
         # scikit-optimize kütüphanesini kontrol et ve yükle
         try:
@@ -219,14 +219,12 @@ def run_bayesian_optimization():
             import subprocess
             subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
             print("scikit-optimize başarıyla yüklendi!")
-        
-        # Bayesian optimizasyon için iki seçenek sun
+          # Model eğitimi için iki seçenek sun
         print("\n" + "="*70)
-        print("BAYESIAN OPTİMİZASYON SEÇENEKLERİ".center(70))
+        print("GELİŞMİŞ YILDIZ MODELİ EĞİTİM SEÇENEKLERİ".center(70))
         print("="*70)
-        print("1. Mevcut en iyi parametrelerle modeli eğit (hızlı)")
-        print("2. Yeni Bayesian optimizasyon iterasyonları çalıştır (yavaş)")
-        
+        print("1. Hazır optimize parametrelerle modeli eğit (hızlı, önerilen)")
+        print("2. Yeni Bayesian optimizasyon iterasyonları çalıştır (çok yavaş, deneysel)")
         try:
             option = int(input("\nSeçiminiz (1/2) [varsayılan=1]: ") or "1")
         except ValueError:
@@ -314,10 +312,9 @@ def run_bayesian_optimization():
             print(">>> from tensorflow.keras.models import load_model")
             print(">>> model = load_model('outputs/optimized_star_model.keras')")
             print(">>> tahminler = model.predict(yeni_veriler)")
-    
-    except Exception as e:
-        print(f"\nBayesian optimizasyon çalıştırılırken hata oluştu: {str(e)}")
-        print("Ana model eğitimi başarıyla tamamlandı, optimizasyon adımı atlandı.")
+      except Exception as e:
+        print(f"\nGelişmiş yıldız modeli eğitimi sırasında hata oluştu: {str(e)}")
+        print("Ana model eğitimi başarıyla tamamlandı, gelişmiş model eğitimi adımı atlandı.")
 
 if __name__ == '__main__':
     # Gerekli kütüphaneleri kontrol et
@@ -349,26 +346,25 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("ASTRONOMİK SINIFLANDIRICI EĞİTİMİ BAŞLATILIYOR".center(70))
     print("="*70)
-    
-    # Kullanıcıya seçenekler sun
+      # Kullanıcıya seçenekler sun
     print("\nÇalıştırılacak modlar:")
-    print("1. Standart eğitim (main)")
-    print("2. Bayesian hiperparametre optimizasyonu")
-    print("3. Tüm modlar (eğitim + optimizasyon)")
-    
+    print("1. Temel eğitim (Galaksi/Kuasar/Yıldız sınıflandırma)")
+    print("2. Gelişmiş yıldız modeli eğitimi (optimize parametreler/optimizasyon)")
+    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")
     try:
         mode = int(input("\nSeçiminiz (1/2/3) [varsayılan=3]: ") or "3")
     except ValueError:
         mode = 3
         print("Geçersiz seçim, varsayılan olarak tüm modlar çalıştırılacak.")
-    
-    # Seçilen moda göre çalıştır
+      # Seçilen moda göre çalıştır
     if mode == 1:
         main()
     elif mode == 2:
-        run_bayesian_optimization()
+        run_advanced_star_model()
     else:
         main()
+        print("\n\nAna model eğitimi tamamlandı, gelişmiş yıldız modeli eğitimine geçiliyor...\n")
+        run_advanced_star_model()
         run_bayesian_optimization()
     
     print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")

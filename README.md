@@ -6,9 +6,9 @@ Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflan
 
 Projede yapılan optimizasyonlar:
 
-- **Geliştirilmiş Yıldız Modeli Mimarisi**: Yıldız modeli mimarisi iyileştirilmiş ve doğruluğu %70+ artırılmıştır. Çift yollu sinir ağı mimarisi (yoğun katmanlar + konvolüsyonel katmanlar) kullanılmıştır.
+- **Geliştirilmiş Yıldız Modeli Mimarisi**: Yıldız modeli mimarisi iyileştirilmiş ve doğruluğu %70+ seviyesine çıkarılmıştır. Çift yollu sinir ağı mimarisi (yoğun katmanlar + konvolüsyonel katmanlar) kullanılmıştır.
 
-- **Bayesian Optimizasyon Ayrımı**: Bayesian optimizasyon işlemleri ayrı bir dosyaya taşınmış, ana programda doğrudan önceden optimize edilmiş parametreler kullanılarak eğitim süresi kısaltılmıştır.
+- **Otomatik Parametre Kullanımı**: Optimum hiperparametreler modelin içine gömülmüş, kullanıcının ek konfigürasyon yapmasına gerek kalmadan en iyi performans alınabilmektedir.
 
 - **Gereksiz Dosyaların Temizlenmesi**: Kullanılmayan boş dosyalar silinmiştir.
 
