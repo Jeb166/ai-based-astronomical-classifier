@@ -168,8 +168,7 @@ def load_star_subset(filename: str):
     # Etiketi fit ve dönüştür
     le = LabelEncoder().fit(y.unique())  # Tüm benzersiz etiketlerle fit et
     print(f"LabelEncoder sınıfları: {le.classes_}")
-    
-    # Dönüştürme ve one-hot encoding işlemleri
+      # Dönüştürme ve one-hot encoding işlemleri
     y_train_encoded = le.transform(y_train)
     y_val_encoded = le.transform(y_val)
     y_test_encoded = le.transform(y_test)
@@ -179,7 +178,8 @@ def load_star_subset(filename: str):
     y_val_oh = to_categorical(y_val_encoded)
     y_test_oh = to_categorical(y_test_encoded)
 
-    # SMOTE'yi yalnızca eğitim setine uygula    try:
+    # SMOTE'yi yalnızca eğitim setine uygula
+    try:
         # Son bir kez daha NaN kontrolü
         if np.isnan(X_train).any() or np.isinf(X_train).any():
             print("UYARI: SMOTE öncesi verilerinizde hala NaN veya sonsuz değerler var. Temizleniyor...")

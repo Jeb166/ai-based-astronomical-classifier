@@ -10,9 +10,8 @@ from sklearn.ensemble import RandomForestClassifier
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import tensorflow as tf
 
-from prepare_data import load_and_prepare, load_star_subset
+from prepare_data import load_and_prepare
 from model import build_model
-from star_model import build_star_model, train_star_model
 
 # ------------------------------------------------------------------
 # Helper will be defined after models are trained
@@ -36,13 +35,12 @@ def main():
     # ------------------------------------------------------------------
     # 0) Paths
     # ------------------------------------------------------------------
-    data_path       = 'data/skyserver.csv'
-    data_path_star  = 'data/star_subtypes.csv'
-    out_dir         = 'outputs'
+    data_path = 'data/skyserver.csv'
+    out_dir = 'outputs'
     os.makedirs(out_dir, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # 1) LOAD GAL/QSO/STAR DATA
+    # 1) LOAD GALAXY/QSO/STAR DATA
     # ------------------------------------------------------------------
     X_tr, X_val, X_te, y_tr, y_val, y_te, df_full = load_and_prepare(data_path)
     y_tr_lbl  = y_tr.argmax(1)
@@ -108,373 +106,49 @@ def main():
     plt.show()
 
     # ------------------------------------------------------------------
-    # 6) SAVE GAL/QSO/STAR MODELS
+    # 6) SAVE MODELS
     # ------------------------------------------------------------------
     dnn.save(f"{out_dir}/dnn_model.keras")
     import joblib
     joblib.dump(rf, f"{out_dir}/rf_model.joblib")
     
-    # ------------------------------------------------------------------
-    # 7) STAR SUB‑CLASS MODEL
-    # ------------------------------------------------------------------    # A) Yıldız veri setini yükle
-    print("\n" + "="*70)
-    print("YILDIZ ALT TÜR MODELİ EĞİTİMİ VE OPTİMİZASYONU".center(70))
-    print("="*70)
-    
-    # Veri yükleme
-    try:
-        Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
-        
-        # Veri kontrolü - NaN/Inf değerleri tespit için
-        print("Veri kontrol ediliyor...")
-        nan_count_train = np.isnan(Xs_tr).sum()
-        inf_count_train = np.isinf(Xs_tr).sum()
-        if nan_count_train > 0 or inf_count_train > 0:
-            print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
-            print("Bu değerler otomatik olarak temizlenecek.")
-            # Ekstra güvenlik - NaN'ları temizle
-            Xs_tr = np.nan_to_num(Xs_tr, nan=0.0, posinf=0.0, neginf=0.0)
-            Xs_val = np.nan_to_num(Xs_val, nan=0.0, posinf=0.0, neginf=0.0)
-            Xs_te = np.nan_to_num(Xs_te, nan=0.0, posinf=0.0, neginf=0.0)        # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
-        print("\nYıldız alt tür etiketlerini hazırlıyorum...")
-        # Önce ys_tr'nin yapısını kontrol et
-        print(f"Etiket verisi şekli: {ys_tr.shape}, türü: {type(ys_tr)}")
-        
-        # ys_tr bir numpy dizisi mi kontrol et
-        if isinstance(ys_tr, np.ndarray):
-            # Eğer dizi içinde dizi ise düzeltelim
-            if ys_tr.ndim > 1 and ys_tr.shape[1] > 1:
-                # One-hot encoded etiketler
-                print("One-hot encoded etiketler tespit edildi.")
-                y_int = np.argmax(ys_tr, axis=1)
-            else:
-                if ys_tr.dtype.kind in ['U', 'S', 'O']:  # String veya object
-                    print("Kategori etiketleri sayısala dönüştürülüyor...")
-                    # Bu noktada ys_tr içeriği görelim
-                    print(f"Örnek etiketler (ilk 5): {ys_tr[:5]}")
-                    # LabelEncoder ile dönüştür
-                    try:
-                        y_int = le_star.transform(ys_tr)
-                    except Exception as e:
-                        print(f"LabelEncoder hatası: {e}")
-                        # Alternatif: pandas kategorik dönüşüm
-                        print("Alternatif yöntem deneniyor...")
-                        unique_labels = np.unique(ys_tr)
-                        label_map = {label: i for i, label in enumerate(unique_labels)}
-                        y_int = np.array([label_map[label] for label in ys_tr])
-                else:
-                    # Sayısal etiketler
-                    print("Sayısal etiketler tespit edildi.")
-                    y_int = ys_tr
-        else:
-            # pandas Series veya başka bir tür olabilir
-            print(f"Etiketler pandas Series veya başka bir türde: {type(ys_tr)}")
-            try:
-                if hasattr(ys_tr, 'values'):  # pandas Series
-                    y_values = ys_tr.values
-                else:
-                    y_values = np.array(ys_tr)
-                
-                # String mi sayısal mı?
-                if np.issubdtype(y_values.dtype, np.number):
-                    y_int = y_values
-                else:
-                    # String etiketleri sayısala çevir
-                    unique_labels = np.unique(y_values)
-                    label_map = {label: i for i, label in enumerate(unique_labels)}
-                    y_int = np.array([label_map[label] for label in y_values])
-            except Exception as e:
-                print(f"Etiketleri dönüştürme hatası: {e}")
-                # Son çare: Bir boş veri oluştur
-                print("Geçici etiketler kullanılıyor...")
-                y_int = np.arange(len(ys_tr) if hasattr(ys_tr, '__len__') else 100) % 7
-        
-        # Sınıf ağırlıklarını hesapla
-        print(f"Dönüştürülmüş y_int örneği (ilk 5): {y_int[:5]}")
-        unique_classes = np.unique(y_int)
-        print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
-        
-        # Class weights hesapla
-        cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
-        cw_dict = dict(zip(unique_classes, cw))
-        
-        # B) Yıldız Modeli Eğitimi
-        print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
-        print("-" * 40)
-        
-        # Model boyutları
-        n_features = Xs_tr.shape[1]
-        n_classes = ys_tr.shape[1]
-        
-        print("Yıldız modeli eğitiliyor...")
-        print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-        
-        # Modeli oluştur - optimize edilmiş parametreleri kullan
-        star_net = build_star_model(
-            n_features, n_classes,
-            neurons1=490,         # Arttırıldı: 434 -> 490
-            neurons2=120,         # Arttırıldı: 99 -> 120
-            neurons3=120,         # Arttırıldı: 107 -> 120
-            dropout1=0.4,         # Ayarlandı: 0.379 -> 0.4
-            dropout2=0.35,        # Ayarlandı: 0.334 -> 0.35
-            dropout3=0.25,        # Ayarlandı: 0.230 -> 0.25
-            learning_rate=0.0002  # Ayarlandı: 0.00024 -> 0.0002
-        )
-        
-        # Gelişmiş stratejileri kullanarak eğit
-        star_net, history = train_star_model(
-            star_net, Xs_tr, ys_tr, Xs_val, ys_val, 
-            class_weights=cw_dict,
-            batch_size=64,        # Daha küçük: 128 -> 64 (daha iyi genelleme)
-            epochs=30,            # Daha uzun: 20 -> 30
-            use_cyclic_lr=True,
-            use_trending_early_stop=True
-        )
-        
-        # Test doğruluğunu hesapla
-        y_pred = star_net.predict(Xs_te)
-        star_acc = (y_pred.argmax(1) == ys_te.argmax(1)).mean() * 100
-        print(f"\nYıldız alt türleri test doğruluğu: {star_acc:.2f}%")
-        
-        # Confusion matrix - yıldız alt türleri
-        plt.figure(figsize=(10, 8))
-        y_pred_classes = y_pred.argmax(1)
-        y_true_classes = ys_te.argmax(1)
-        cm = confusion_matrix(y_true_classes, y_pred_classes)
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=le_star.classes_, yticklabels=le_star.classes_)
-        plt.title('Yıldız Alt Türleri - Confusion Matrix')
-        plt.xlabel('Tahmin Edilen')
-        plt.ylabel('Gerçek')
-        plt.tight_layout()
-        plt.savefig(f"{out_dir}/star_subtypes_confusion.png", dpi=150)
-        plt.show()
-        
-        # Modeli kaydet
-        star_net.save(f"{out_dir}/star_model.keras")
-        joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
-        joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
-        
-    except Exception as e:
-        print(f"Yıldız modeli eğitiminde hata: {str(e)}")
-        print("Yıldız alt tür modeli eğitimi atlanıyor.")
-        # Boş değerler ata ki ilerideki kod çalışsın
-        star_net, le_star, scaler_star = None, None, None
+    # İşlem tamamlandı mesajı
+    print("\nTemel sınıflandırma modeli eğitimi tamamlandı!")
+    print(f"Modeller {out_dir} klasörüne kaydedildi.")
     
     # ------------------ helper for UI / further use -----------------
     global full_predict
     def full_predict(sample_array):
-        """Return GALAXY/QSO/STAR‑subtype for each input row (2‑stage)."""
+        """Return GALAXY/QSO/STAR classification for each input row."""
         p_ens = best_w*dnn.predict(sample_array) + (1-best_w)*rf.predict_proba(sample_array)
         primary = p_ens.argmax(1)
-        STAR_ID = np.where(labels=='STAR')[0][0]
-        out = []
-        for i, cls in enumerate(primary):
-            if cls == STAR_ID:
-                x_s = scaler_star.transform(sample_array[i:i+1])
-                sub_id = star_net.predict(x_s).argmax(1)[0]
-                out.append(f"STAR-{le_star.inverse_transform([sub_id])[0]}")
-            else:
-                out.append(labels[cls])
+        out = [labels[cls] for cls in primary]
         return out
 
     # leave models in global scope for interactive sessions
     globals().update({'dnn': dnn, 'rf': rf, 'best_w': best_w,
-                      'labels': labels, 'star_net': star_net,
-                      'scaler_star': scaler_star, 'le_star': le_star})
+                      'labels': labels})
     
     print("\n" + "="*70)
-    print("TÜM EĞİTİM VE OPTİMİZASYON İŞLEMLERİ TAMAMLANDI".center(70))
+    print("MODEL EĞİTİMİ TAMAMLANDI".center(70))
     print("="*70)
     print(f"\nTüm modeller '{out_dir}' klasörüne kaydedildi.")
     print("\nÖnemli dosyalar:")
     print(f"- {out_dir}/dnn_model.keras: Ana DNN modeli")
     print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
-    print(f"- {out_dir}/star_model.keras: Yıldız alt tür modeli")
     
-    # Modelinizi kullanmak için:    print("\nBu modeli kullanmak için:")
+    # Modelinizi kullanmak için:
+    print("\nBu modeli kullanmak için:")
     print(">>> from main import full_predict")
     print(">>> sonuclar = full_predict(yeni_veriler)")
 
-def run_advanced_star_model():
-    """Gelişmiş yıldız modeli eğitimi ve optimizasyon seçeneklerini çalıştır"""
-    try:
-        # scikit-optimize kütüphanesini kontrol et ve yükle
-        try:
-            import skopt
-        except ImportError:
-            print("\nBayesian optimizasyon için 'scikit-optimize' kütüphanesi yükleniyor...")
-            import sys
-            import subprocess
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
-            print("scikit-optimize başarıyla yüklendi!")
-            
-        # Model eğitimi için iki seçenek sun
-        print("\n" + "="*70)
-        print("GELİŞMİŞ YILDIZ MODELİ EĞİTİM SEÇENEKLERİ".center(70))
-        print("="*70)
-        print("1. Dengeli parametrelerle modeli eğit (daha kararlı sonuçlar)")
-        print("2. Bayesian optimizasyon ile yeni parametreler bul (deneysel)")
-        try:
-            option = int(input("\nSeçiminiz (1/2) [varsayılan=1]: ") or "1")
-        except ValueError:
-            option = 1
-            print("Geçersiz seçim, varsayılan olarak mevcut parametrelerle eğitilecek.")
-        
-        if option == 2:
-            # Tam optimizasyon çalıştırmak istiyorsa
-            from bayesian_optimize_star import optimize_star_model_bayesian
-            print("\n" + "="*70)
-            print("BAYESIAN OPTİMİZASYON BAŞLATILIYOR".center(70))
-            print("="*70)
-            
-            print("\nYıldız modeli için Bayesian optimizasyon çalıştırılıyor...")
-            model, best_params, result = optimize_star_model_bayesian(n_trials=10, save_dir='outputs')
-            
-            # En iyi parametreleri raporla
-            if best_params:
-                print("\nEN İYİ HİPERPARAMETRELER:")
-                print("-" * 40)
-                for param, value in best_params.items():
-                    print(f"{param}: {value}")
-                
-                print(f"\nOptimize edilmiş model kaydedildi: outputs/bayesian_optimized_star_model.keras")
-                print("Bu modeli kullanmak için:")
-                print(">>> from tensorflow.keras.models import load_model")
-                print(">>> model = load_model('outputs/bayesian_optimized_star_model.keras')")
-                print(">>> tahminler = model.predict(yeni_veriler)")
-            
-        else:
-            # Mevcut en iyi parametreleri kullan
-            from star_model import build_star_model, train_star_model
-            from prepare_data import load_star_subset
-            
-            print("\n" + "="*70)
-            print("EN İYİ PARAMETRELERLE YILDIZ MODELİ EĞİTİLİYOR".center(70))
-            print("="*70)            # Veriyi yükle
-            print("Veri yükleniyor...")
-            data_path_star = 'data/star_subtypes.csv'
-            X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
-            
-            # Veri kontrolü - NaN/Inf değerleri tespit için
-            print("Veri kontrol ediliyor...")
-            nan_count_train = np.isnan(X_train).sum()
-            inf_count_train = np.isinf(X_train).sum()
-            if nan_count_train > 0 or inf_count_train > 0:
-                print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
-                print("Bu değerler otomatik olarak temizlenecek.")
-                # Ekstra güvenlik - NaN'ları temizle
-                X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
-                X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
-                X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)            # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
-            print("\nYıldız alt tür etiketlerini hazırlıyorum...")
-            # Önce y_train'in yapısını kontrol et
-            print(f"Etiket verisi şekli: {y_train.shape}, türü: {type(y_train)}")
-            
-            # y_train bir numpy dizisi mi kontrol et
-            if isinstance(y_train, np.ndarray):
-                # Eğer dizi içinde dizi ise düzeltelim
-                if y_train.ndim > 1 and y_train.shape[1] > 1:
-                    # One-hot encoded etiketler
-                    print("One-hot encoded etiketler tespit edildi.")
-                    y_int = np.argmax(y_train, axis=1)
-                else:
-                    if y_train.dtype.kind in ['U', 'S', 'O']:  # String veya object
-                        print("Kategori etiketleri sayısala dönüştürülüyor...")
-                        # Bu noktada y_train içeriği görelim
-                        print(f"Örnek etiketler (ilk 5): {y_train[:5]}")
-                        # LabelEncoder ile dönüştür
-                        try:
-                            y_int = le_star.transform(y_train)
-                        except Exception as e:
-                            print(f"LabelEncoder hatası: {e}")
-                            # Alternatif: pandas kategorik dönüşüm
-                            print("Alternatif yöntem deneniyor...")
-                            unique_labels = np.unique(y_train)
-                            label_map = {label: i for i, label in enumerate(unique_labels)}
-                            y_int = np.array([label_map[label] for label in y_train])
-                    else:
-                        # Sayısal etiketler
-                        print("Sayısal etiketler tespit edildi.")
-                        y_int = y_train
-            else:
-                # pandas Series veya başka bir tür olabilir
-                print(f"Etiketler pandas Series veya başka bir türde: {type(y_train)}")
-                try:
-                    if hasattr(y_train, 'values'):  # pandas Series
-                        y_values = y_train.values
-                    else:
-                        y_values = np.array(y_train)
-                    
-                    # String mi sayısal mı?
-                    if np.issubdtype(y_values.dtype, np.number):
-                        y_int = y_values
-                    else:
-                        # String etiketleri sayısala çevir
-                        unique_labels = np.unique(y_values)
-                        label_map = {label: i for i, label in enumerate(unique_labels)}
-                        y_int = np.array([label_map[label] for label in y_values])
-                except Exception as e:
-                    print(f"Etiketleri dönüştürme hatası: {e}")
-                    # Son çare: Bir boş veri oluştur
-                    print("Geçici etiketler kullanılıyor...")
-                    y_int = np.arange(len(y_train) if hasattr(y_train, '__len__') else 100) % 7
-            
-            # Sınıf ağırlıklarını hesapla
-            print(f"Dönüştürülmüş y_int örneği (ilk 5): {y_int[:5]}")
-            unique_classes = np.unique(y_int)
-            print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
-            
-            # Class weights hesapla
-            cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
-            cw_dict = dict(zip(unique_classes, cw))
-            
-            # Daha dengeli parametrelerle modeli oluştur
-            print("\nYıldız modeli daha dengeli parametrelerle oluşturuluyor...")
-            
-            # Model boyutları
-            n_features = X_train.shape[1]
-            n_classes = y_train.shape[1]            # Modeli oluştur (optimize edilmiş parametrelerle)
-            best_model = build_star_model(
-                input_dim=n_features, 
-                n_classes=n_classes,
-                neurons1=490,         # Arttırıldı: 434 -> 490
-                neurons2=120,         # Arttırıldı: 99 -> 120
-                neurons3=120,         # Arttırıldı: 107 -> 120
-                dropout1=0.4,         # Ayarlandı: 0.379 -> 0.4
-                dropout2=0.35,        # Ayarlandı: 0.334 -> 0.35
-                dropout3=0.25,        # Ayarlandı: 0.230 -> 0.25
-                learning_rate=0.0002  # Ayarlandı: 0.00024 -> 0.0002
-            )
-            
-            # Modeli eğit
-            print("\nYıldız modeli eğitiliyor...")
-            best_model, _ = train_star_model(
-                best_model, 
-                X_train, y_train, 
-                X_val, y_val, 
-                class_weights=cw_dict,
-                batch_size=64,         # Daha küçük: 128 -> 64 (daha iyi genelleme)
-                epochs=30,             # Daha uzun: 20 -> 30
-                use_cyclic_lr=True,
-                use_trending_early_stop=True
-            )
-            
-            # Test doğruluğunu hesapla
-            test_preds = best_model.predict(X_test)
-            test_accuracy = (test_preds.argmax(1) == y_test.argmax(1)).mean() * 100
-            print(f"\nYıldız alt türleri test doğruluğu: {test_accuracy:.2f}%")
-            
-            # Modeli kaydet
-            best_model.save(f"outputs/optimized_star_model.keras")            
-            print("\nOptimize edilmiş model kaydedildi: outputs/optimized_star_model.keras")
-            print("Bu modeli kullanmak için:")
-            print(">>> from tensorflow.keras.models import load_model")
-            print(">>> model = load_model('outputs/optimized_star_model.keras')")
-            print(">>> tahminler = model.predict(yeni_veriler)")
-    except Exception as e:
-        print(f"\nGelişmiş yıldız modeli eğitimi sırasında hata oluştu: {str(e)}")
-        print("Ana model eğitimi başarıyla tamamlandı, gelişmiş model eğitimi adımı atlandı.")
+def print_helper():
+    """Kaydedilen modeller hakkında bilgi verir"""
+    out_dir = 'outputs'
+    print("\nKaydedilen dosyalar:")
+    print(f"- {out_dir}/dnn_model.keras: Derin sinir ağı modeli")
+    print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
+    print(f"- {out_dir}/[çeşitli görseller].png: Performans grafikleri")
 
 if __name__ == '__main__':
     # Gerekli kütüphaneleri kontrol et
@@ -506,25 +180,8 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("ASTRONOMİK SINIFLANDIRICI EĞİTİMİ BAŞLATILIYOR".center(70))
     print("="*70)
-      # Kullanıcıya seçenekler sun
-    print("\nÇalıştırılacak modlar:")
-    print("1. Temel eğitim (Galaksi/Kuasar/Yıldız sınıflandırma)")
-    print("2. Gelişmiş yıldız modeli eğitimi (optimize parametreler/optimizasyon)")
-    print("3. Tüm modlar (temel eğitim + gelişmiş yıldız modeli)")    
-    try:
-        mode = int(input("\nSeçiminiz (1/2/3) [varsayılan=3]: ") or "3")
-    except ValueError:
-        mode = 3
-        print("Geçersiz seçim, varsayılan olarak tüm modlar çalıştırılacak.")
-    
-    # Seçilen moda göre çalıştır
-    if mode == 1:
-        main()
-    elif mode == 2:
-        run_advanced_star_model()
-    else:
-        main()
-        print("\n\nAna model eğitimi tamamlandı, gelişmiş yıldız modeli eğitimine geçiliyor...\n")
-        run_advanced_star_model()
+      
+    # Ana modeli çalıştır
+    main()
     
     print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")
