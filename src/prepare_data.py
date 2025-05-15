@@ -95,8 +95,7 @@ def load_star_subset(filename: str):
     # ------------------------------------------------------------------
     for a, b in [("u", "g"), ("g", "r"), ("r", "i"), ("i", "z")]:
         star_df[f"{a}_{b}"] = star_df[a] - star_df[b]
-    
-    # 3.5) GELİŞMİŞ ÖZELLİK MÜHENDİSLİĞİ
+      # 3.5) GELİŞMİŞ ÖZELLİK MÜHENDİSLİĞİ
     # Renk oranları (astronomide önemli)
     star_df['u_over_g'] = star_df['u'] / star_df['g']
     star_df['g_over_r'] = star_df['g'] / star_df['r']
@@ -108,6 +107,18 @@ def load_star_subset(filename: str):
     star_df['g_r_squared'] = star_df['g_r'] ** 2
     star_df['r_i_squared'] = star_df['r_i'] ** 2
     star_df['i_z_squared'] = star_df['i_z'] ** 2
+    
+    # Tüm ikili değişkenlerin birleştirilmesi (renk-renk diyagramları)
+    for i, col1 in enumerate(['u', 'g', 'r', 'i', 'z']):
+        for col2 in ['u', 'g', 'r', 'i', 'z'][i+1:]:
+            if col1 != col2:
+                star_df[f'{col1}_mul_{col2}'] = star_df[col1] * star_df[col2]
+    
+    # Spektral indeksler (astronomik özellikler için)
+    star_df['balhc'] = star_df['redshift'] * (star_df['u_g'] / star_df['g_r'])
+    star_df['caii_k'] = (star_df['u'] * star_df['g']) / star_df['r']
+    star_df['mgb'] = star_df['g'] * star_df['g_r'] / star_df['redshift'].clip(0.001)
+    star_df['nad'] = star_df['r'] * star_df['r_i'] / star_df['redshift'].clip(0.001)
 
     # ------------------------------------------------------------------
     # 4)  Özellik / etiket ayrımı ve split
@@ -139,10 +150,19 @@ def load_star_subset(filename: str):
     le = LabelEncoder().fit(y_train)
     y_train_oh = to_categorical(le.transform(y_train))
     y_val_oh   = to_categorical(le.transform(y_val))
-    y_test_oh  = to_categorical(le.transform(y_test))
-
-    # SMOTE'yi yalnızca eğitim setine uygula
-    smote = SMOTE(random_state=42)
+    y_test_oh  = to_categorical(le.transform(y_test))    # SMOTE'yi yalnızca eğitim setine uygula
+    smote = SMOTE(
+        sampling_strategy={
+            'OB': 10000,  # Nadir sınıfların sayısını artır ama aşırı artırma
+            'M': 10000, 
+            'WD': 20000,
+            'G': 26000, 
+            'K': 26000,
+            'A': 26000,
+        },
+        k_neighbors=10,
+        random_state=42
+    )
     X_train_res, y_train_res = smote.fit_resample(X_train, le.transform(y_train))
     y_train_res_oh = to_categorical(y_train_res)
 

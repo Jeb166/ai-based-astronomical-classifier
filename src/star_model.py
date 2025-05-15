@@ -7,9 +7,9 @@ from tensorflow.keras.optimizers import Adam
 import numpy as np
 
 def build_star_model(input_dim: int, n_classes: int, 
-                    neurons1=434, neurons2=99, neurons3=107, 
-                    dropout1=0.379, dropout2=0.334, dropout3=0.230,
-                    learning_rate=0.00024, **kwargs):
+                    neurons1=490, neurons2=120, neurons3=120, 
+                    dropout1=0.4, dropout2=0.35, dropout3=0.25,
+                    learning_rate=0.0002, **kwargs):
     """
     Yıldız türlerini sınıflandırmak için gelişmiş derin sinir ağı modeli oluşturur.
     
@@ -26,38 +26,45 @@ def build_star_model(input_dim: int, n_classes: int,
     """
     # Giriş katmanı
     inputs = Input(shape=(input_dim,))
-    
-    # Ana yol - Derin bağlantılı katmanlar
-    x1 = Dense(neurons1, kernel_regularizer=l2(1e-4))(inputs)
-    x1 = LeakyReLU(alpha=0.1)(x1)
+      # Ana yol - Derin bağlantılı katmanlar
+    x1 = Dense(neurons1, kernel_regularizer=l2(2e-4))(inputs)
+    x1 = LeakyReLU(alpha=0.2)(x1)
     x1 = BatchNormalization()(x1)
     x1 = Dropout(dropout1)(x1)
     
-    x1 = Dense(neurons2, kernel_regularizer=l2(1e-4))(x1)
-    x1 = LeakyReLU(alpha=0.1)(x1)
+    x1 = Dense(neurons2, kernel_regularizer=l2(2e-4))(x1)
+    x1 = LeakyReLU(alpha=0.2)(x1)
     x1 = BatchNormalization()(x1)
     x1 = Dropout(dropout2)(x1)
     
-    x1 = Dense(neurons3, kernel_regularizer=l2(1e-4))(x1)
-    x1 = LeakyReLU(alpha=0.1)(x1)
+    x1 = Dense(neurons3, kernel_regularizer=l2(2e-4))(x1)
+    x1 = LeakyReLU(alpha=0.2)(x1)
     x1 = BatchNormalization()(x1)
-    x1 = Dropout(dropout3)(x1)
-      # İkinci yol - Öznitelik dönüşümü (1D konvolüsyon)
+    x1 = Dropout(dropout3)(x1)# İkinci yol - Öznitelik dönüşümü (1D konvolüsyon)
     reshaped = Reshape((input_dim, 1))(inputs)
-    x2 = Conv1D(16, kernel_size=3, padding='same', kernel_regularizer=l2(1e-3))(reshaped)
+    x2 = Conv1D(32, kernel_size=3, padding='same', kernel_regularizer=l2(1e-3))(reshaped)
     x2 = BatchNormalization()(x2)
     x2 = LeakyReLU(alpha=0.1)(x2)
-    x2 = Conv1D(8, kernel_size=3, padding='same', kernel_regularizer=l2(1e-3))(x2)
+    x2 = Conv1D(16, kernel_size=3, padding='same', kernel_regularizer=l2(1e-3))(x2)
     x2 = BatchNormalization()(x2)
     x2 = LeakyReLU(alpha=0.1)(x2)
     x2 = GlobalAveragePooling1D()(x2)
-    x2 = Dropout(0.4)(x2)
-    
-    # İki yolu birleştir
+    x2 = Dropout(0.5)(x2)
+      # İki yolu birleştir
     merged = Concatenate()([x1, x2])
     
+    # Fazladan bir katman ekle (residual bağlantı ile)
+    residual = Dense(64, kernel_regularizer=l2(2e-4))(merged)
+    residual = LeakyReLU(alpha=0.2)(residual)
+    residual = BatchNormalization()(residual)
+    
+    # Skip connection ekle
+    skip_connection = Dense(64, kernel_regularizer=l2(2e-4))(merged)
+    combined = Concatenate()([residual, skip_connection])
+    combined = Dropout(0.3)(combined)
+    
     # Son katman
-    outputs = Dense(n_classes, activation='softmax')(merged)
+    outputs = Dense(n_classes, activation='softmax')(combined)
     
     # Model oluştur
     model = Model(inputs=inputs, outputs=outputs)
@@ -72,7 +79,7 @@ def build_star_model(input_dim: int, n_classes: int,
 
 # Hızlı eğitim için yardımcı fonksiyon
 def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None, 
-                    max_samples=None, batch_size=128, epochs=20, 
+                    max_samples=None, batch_size=64, epochs=30, 
                     use_cyclic_lr=True, use_trending_early_stop=True):
     """
     Yıldız türü modelini gelişmiş eğitim stratejileriyle eğitmek için hızlı bir yöntem.
@@ -155,18 +162,17 @@ def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None,
         )
         callbacks.append(trend_stopping)
     else:
-        # Standart erken durdurma
+    # Standart erken durdurma
         callbacks.append(
             EarlyStopping(
                 monitor='val_categorical_accuracy',
-                patience=5,  # Daha uzun bir süre bekliyoruz
+                patience=8,  # Daha uzun bir süre bekliyoruz
                 restore_best_weights=True
             )
         )
-    
-    # 2. Döngüsel öğrenme oranı
+      # 2. Döngüsel öğrenme oranı
     if use_cyclic_lr:
-        def cyclic_learning_rate(epoch, min_lr=1e-6, max_lr=1e-3, cycle_length=8):
+        def cyclic_learning_rate(epoch, min_lr=5e-7, max_lr=5e-4, cycle_length=10):
             """Geliştirilmiş döngüsel öğrenme oranı planı"""
             # Döngü içindeki mevcut konum (0 ile 1 arasında)
             cycle_progress = (epoch % cycle_length) / cycle_length
