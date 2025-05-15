@@ -125,11 +125,15 @@ def load_star_subset(filename: str):
     star_df['caii_k'] = (star_df['u'] * star_df['g']) / star_df['r'].clip(0.001)
     star_df['mgb'] = star_df['g'] * star_df['g_r'] / star_df['redshift']
     star_df['nad'] = star_df['r'] * star_df['r_i'] / star_df['redshift']
-    
-    # Hesaplamalar sonrası oluşan NaN ve sonsuz değerleri temizle
+      # Hesaplamalar sonrası oluşan NaN ve sonsuz değerleri temizle
     star_df = star_df.replace([np.inf, -np.inf], np.nan)
-    # NaN değerleri ilgili sütunların medyanları ile doldur
-    star_df = star_df.fillna(star_df.median())
+    
+    # Sayısal ve sayısal olmayan sütunları ayır
+    numeric_cols = star_df.select_dtypes(include=['number']).columns
+    # Sadece sayısal sütunlar için medyan hesapla
+    medians = star_df[numeric_cols].median()
+    # NaN değerleri sadece sayısal sütunlar için ilgili medyanlarla doldur
+    star_df[numeric_cols] = star_df[numeric_cols].fillna(medians)
 
     # ------------------------------------------------------------------
     # 4)  Özellik / etiket ayrımı ve split
