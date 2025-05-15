@@ -126,12 +126,16 @@ def main():
     # Renk indeksi ve diğer oluşturulan özellikleri ekle
     for a, b in [("u", "g"), ("g", "r"), ("r", "i"), ("i", "z")]:
         feature_names.append(f"{a}_{b}")
-    
-    # Top 10 özelliği görselleştir
+      # Top 10 özelliği görselleştir
     plt.figure(figsize=(10, 6))
     plt.title("Özellik Önemlilikleri")
-    plt.bar(range(10), importances[indices[:10]], align='center')
-    plt.xticks(range(10), [feature_names[i] for i in indices[:10]], rotation=45)
+    
+    # İndeksleri feature_names boyutuna göre filtreleyelim
+    valid_indices = [i for i in indices if i < len(feature_names)]
+    top_n = min(10, len(valid_indices))
+    
+    plt.bar(range(top_n), importances[valid_indices[:top_n]], align='center')
+    plt.xticks(range(top_n), [feature_names[i] for i in valid_indices[:top_n]], rotation=45)
     plt.tight_layout()
     plt.savefig('outputs/feature_importance.png')
     

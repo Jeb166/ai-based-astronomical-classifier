@@ -179,8 +179,7 @@ def load_star_subset(filename: str):
     y_val_oh = to_categorical(y_val_encoded)
     y_test_oh = to_categorical(y_test_encoded)
 
-    # SMOTE'yi yalnızca eğitim setine uygula
-    try:
+    # SMOTE'yi yalnızca eğitim setine uygula    try:
         # Son bir kez daha NaN kontrolü
         if np.isnan(X_train).any() or np.isinf(X_train).any():
             print("UYARI: SMOTE öncesi verilerinizde hala NaN veya sonsuz değerler var. Temizleniyor...")
@@ -192,19 +191,40 @@ def load_star_subset(filename: str):
         else:
             X_train_df = X_train
             
+        # Önce sınıf sayılarını kontrol et
+        unique_classes = np.unique(y_train)
+        class_counts = pd.Series(y_train).value_counts()
+        print("Eğitim veri setindeki sınıf sayıları:")
+        for cls in unique_classes:
+            print(f"  - {cls}: {class_counts.get(cls, 0)}")
+        
+        # Mevcut sınıf dağılımına göre hedef sayıları belirle
+        # F sınıfını limitle, diğerlerini dengeli şekilde artır
+        target_counts = {}
+        for cls in unique_classes:
+            if cls == 'F':
+                target_counts[cls] = min(class_counts.get(cls, 0), 25000)  # F sınıfını sınırla
+            elif class_counts.get(cls, 0) > 0:  # Sınıf mevcutsa
+                # Sınıfın en az 15.000 örneği olsun, ancak mevcut sayıdan az olmasın
+                target_counts[cls] = max(class_counts.get(cls, 0), 15000)
+        
+        print("SMOTE hedef sınıf sayıları:", target_counts)
+        
+        # Komşu sayısını sınıf boyutuna göre ayarla
+        min_samples = min([count for count in class_counts.values() if count > 0])
+        k_neighbors = min(5, max(1, min_samples - 1))  # Küçük sınıflarda k değerini düşür
+        
         smote = SMOTE(
-            sampling_strategy={
-                'OB': 10000,  # Nadir sınıfların sayısını artır ama aşırı artırma
-                'M': 10000, 
-                'WD': 20000,
-                'G': 26000, 
-                'K': 26000,
-                'A': 26000,
-            },
-            k_neighbors=5,  # Nadir sınıflarda yeterli komşu olmayabilir, değeri düşürdük
+            sampling_strategy=target_counts,
+            k_neighbors=k_neighbors,
             random_state=42
         )
-        X_train_res, y_train_res = smote.fit_resample(X_train_df, le.transform(y_train))
+        
+        # SMOTE'u orijinal string etiketlerle kullan
+        X_train_res, y_train_res_str = smote.fit_resample(X_train_df, y_train)
+        
+        # Sonuçta elde edilen etiketleri dönüştür
+        y_train_res = le.transform(y_train_res_str)
         y_train_res_oh = to_categorical(y_train_res)
         
         print(f"SMOTE sonrası sınıf dağılımı: {np.bincount(y_train_res)}")
