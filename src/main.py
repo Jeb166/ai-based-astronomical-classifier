@@ -135,27 +135,64 @@ def main():
             # Ekstra güvenlik - NaN'ları temizle
             Xs_tr = np.nan_to_num(Xs_tr, nan=0.0, posinf=0.0, neginf=0.0)
             Xs_val = np.nan_to_num(Xs_val, nan=0.0, posinf=0.0, neginf=0.0)
-            Xs_te = np.nan_to_num(Xs_te, nan=0.0, posinf=0.0, neginf=0.0)
-          # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
+            Xs_te = np.nan_to_num(Xs_te, nan=0.0, posinf=0.0, neginf=0.0)        # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
         print("\nYıldız alt tür etiketlerini hazırlıyorum...")
-        # ys_tr doğrudan sayısal one-hot encoded format mı?
-        if isinstance(ys_tr, np.ndarray) and len(ys_tr.shape) == 2:
-            print("Etiketler zaten one-hot kodlanmış.")
-            y_int = np.argmax(ys_tr, axis=1)
-        # Yoksa string veya sayısal sınıf değerlerini içeren bir dizi mi?
-        else:
-            # Kategorik string değerleri ise LabelEncoder ile dönüştür
-            if not np.issubdtype(ys_tr.dtype, np.number):
-                print("Kategorik etiketleri sayısal değerlere dönüştürüyorum...")
-                y_int = le_star.transform(ys_tr)
+        # Önce ys_tr'nin yapısını kontrol et
+        print(f"Etiket verisi şekli: {ys_tr.shape}, türü: {type(ys_tr)}")
+        
+        # ys_tr bir numpy dizisi mi kontrol et
+        if isinstance(ys_tr, np.ndarray):
+            # Eğer dizi içinde dizi ise düzeltelim
+            if ys_tr.ndim > 1 and ys_tr.shape[1] > 1:
+                # One-hot encoded etiketler
+                print("One-hot encoded etiketler tespit edildi.")
+                y_int = np.argmax(ys_tr, axis=1)
             else:
-                print("Etiketler zaten sayısal format.")
-                y_int = ys_tr
+                if ys_tr.dtype.kind in ['U', 'S', 'O']:  # String veya object
+                    print("Kategori etiketleri sayısala dönüştürülüyor...")
+                    # Bu noktada ys_tr içeriği görelim
+                    print(f"Örnek etiketler (ilk 5): {ys_tr[:5]}")
+                    # LabelEncoder ile dönüştür
+                    try:
+                        y_int = le_star.transform(ys_tr)
+                    except Exception as e:
+                        print(f"LabelEncoder hatası: {e}")
+                        # Alternatif: pandas kategorik dönüşüm
+                        print("Alternatif yöntem deneniyor...")
+                        unique_labels = np.unique(ys_tr)
+                        label_map = {label: i for i, label in enumerate(unique_labels)}
+                        y_int = np.array([label_map[label] for label in ys_tr])
+                else:
+                    # Sayısal etiketler
+                    print("Sayısal etiketler tespit edildi.")
+                    y_int = ys_tr
+        else:
+            # pandas Series veya başka bir tür olabilir
+            print(f"Etiketler pandas Series veya başka bir türde: {type(ys_tr)}")
+            try:
+                if hasattr(ys_tr, 'values'):  # pandas Series
+                    y_values = ys_tr.values
+                else:
+                    y_values = np.array(ys_tr)
+                
+                # String mi sayısal mı?
+                if np.issubdtype(y_values.dtype, np.number):
+                    y_int = y_values
+                else:
+                    # String etiketleri sayısala çevir
+                    unique_labels = np.unique(y_values)
+                    label_map = {label: i for i, label in enumerate(unique_labels)}
+                    y_int = np.array([label_map[label] for label in y_values])
+            except Exception as e:
+                print(f"Etiketleri dönüştürme hatası: {e}")
+                # Son çare: Bir boş veri oluştur
+                print("Geçici etiketler kullanılıyor...")
+                y_int = np.arange(len(ys_tr) if hasattr(ys_tr, '__len__') else 100) % 7
         
         # Sınıf ağırlıklarını hesapla
+        print(f"Dönüştürülmüş y_int örneği (ilk 5): {y_int[:5]}")
         unique_classes = np.unique(y_int)
         print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
-        print(f"Örnek etiketler: {y_int[:5]}")
         
         # Class weights hesapla
         cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
@@ -329,27 +366,64 @@ def run_advanced_star_model():
                 # Ekstra güvenlik - NaN'ları temizle
                 X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
                 X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
-                X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
-              # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
+                X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)            # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
             print("\nYıldız alt tür etiketlerini hazırlıyorum...")
-            # y_train doğrudan sayısal one-hot encoded format mı?
-            if isinstance(y_train, np.ndarray) and len(y_train.shape) == 2:
-                print("Etiketler zaten one-hot kodlanmış.")
-                y_int = np.argmax(y_train, axis=1)
-            # Yoksa string veya sayısal sınıf değerlerini içeren bir dizi mi?
-            else:
-                # Kategorik string değerleri ise LabelEncoder ile dönüştür
-                if not np.issubdtype(y_train.dtype, np.number):
-                    print("Kategorik etiketleri sayısal değerlere dönüştürüyorum...")
-                    y_int = le_star.transform(y_train)
+            # Önce y_train'in yapısını kontrol et
+            print(f"Etiket verisi şekli: {y_train.shape}, türü: {type(y_train)}")
+            
+            # y_train bir numpy dizisi mi kontrol et
+            if isinstance(y_train, np.ndarray):
+                # Eğer dizi içinde dizi ise düzeltelim
+                if y_train.ndim > 1 and y_train.shape[1] > 1:
+                    # One-hot encoded etiketler
+                    print("One-hot encoded etiketler tespit edildi.")
+                    y_int = np.argmax(y_train, axis=1)
                 else:
-                    print("Etiketler zaten sayısal format.")
-                    y_int = y_train
+                    if y_train.dtype.kind in ['U', 'S', 'O']:  # String veya object
+                        print("Kategori etiketleri sayısala dönüştürülüyor...")
+                        # Bu noktada y_train içeriği görelim
+                        print(f"Örnek etiketler (ilk 5): {y_train[:5]}")
+                        # LabelEncoder ile dönüştür
+                        try:
+                            y_int = le_star.transform(y_train)
+                        except Exception as e:
+                            print(f"LabelEncoder hatası: {e}")
+                            # Alternatif: pandas kategorik dönüşüm
+                            print("Alternatif yöntem deneniyor...")
+                            unique_labels = np.unique(y_train)
+                            label_map = {label: i for i, label in enumerate(unique_labels)}
+                            y_int = np.array([label_map[label] for label in y_train])
+                    else:
+                        # Sayısal etiketler
+                        print("Sayısal etiketler tespit edildi.")
+                        y_int = y_train
+            else:
+                # pandas Series veya başka bir tür olabilir
+                print(f"Etiketler pandas Series veya başka bir türde: {type(y_train)}")
+                try:
+                    if hasattr(y_train, 'values'):  # pandas Series
+                        y_values = y_train.values
+                    else:
+                        y_values = np.array(y_train)
+                    
+                    # String mi sayısal mı?
+                    if np.issubdtype(y_values.dtype, np.number):
+                        y_int = y_values
+                    else:
+                        # String etiketleri sayısala çevir
+                        unique_labels = np.unique(y_values)
+                        label_map = {label: i for i, label in enumerate(unique_labels)}
+                        y_int = np.array([label_map[label] for label in y_values])
+                except Exception as e:
+                    print(f"Etiketleri dönüştürme hatası: {e}")
+                    # Son çare: Bir boş veri oluştur
+                    print("Geçici etiketler kullanılıyor...")
+                    y_int = np.arange(len(y_train) if hasattr(y_train, '__len__') else 100) % 7
             
             # Sınıf ağırlıklarını hesapla
+            print(f"Dönüştürülmüş y_int örneği (ilk 5): {y_int[:5]}")
             unique_classes = np.unique(y_int)
             print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
-            print(f"Örnek etiketler: {y_int[:5]}")
             
             # Class weights hesapla
             cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)

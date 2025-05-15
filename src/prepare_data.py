@@ -160,11 +160,22 @@ def load_star_subset(filename: str):
     X_train = np.nan_to_num(X_train, nan=0.0)
     X_val = np.nan_to_num(X_val, nan=0.0)
     X_test = np.nan_to_num(X_test, nan=0.0)
+    
+    # Etiketi fit ve dönüştür
+    le = LabelEncoder().fit(y.unique())  # Tüm benzersiz etiketlerle fit et
+    print(f"LabelEncoder sınıfları: {le.classes_}")
+    
+    # Dönüştürme ve one-hot encoding işlemleri
+    y_train_encoded = le.transform(y_train)
+    y_val_encoded = le.transform(y_val)
+    y_test_encoded = le.transform(y_test)
+    print(f"y_train ilk 5 değer (dönüşüm sonrası): {y_train_encoded[:5]}")
+    
+    y_train_oh = to_categorical(y_train_encoded)
+    y_val_oh = to_categorical(y_val_encoded)
+    y_test_oh = to_categorical(y_test_encoded)
 
-    le = LabelEncoder().fit(y_train)
-    y_train_oh = to_categorical(le.transform(y_train))
-    y_val_oh   = to_categorical(le.transform(y_val))
-    y_test_oh  = to_categorical(le.transform(y_test))    # SMOTE'yi yalnızca eğitim setine uygula
+    # SMOTE'yi yalnızca eğitim setine uygula
     try:
         # Son bir kez daha NaN kontrolü
         if np.isnan(X_train).any() or np.isinf(X_train).any():
