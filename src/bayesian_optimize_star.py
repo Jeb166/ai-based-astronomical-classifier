@@ -40,14 +40,35 @@ def optimize_star_model_bayesian(n_trials=15, save_dir='outputs'):    """
         print("Veri dosyaları eksik. Optimizasyon iptal ediliyor.")
         print("Lütfen eksik veri dosyalarını 'data/' klasörüne yükleyin ve tekrar deneyin.")
         return None, None, None
-    
-    # Veriyi yükle
+      # Veriyi yükle
     print("Veri yükleniyor...")
     data_path_star = 'data/star_subtypes.csv'
     X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
     
-    # Sınıf ağırlıklarını hesapla
-    y_int = y_train.argmax(1)
+    # Veri kontrolü - NaN/Inf değerleri tespit için
+    print("Veri kontrol ediliyor...")
+    nan_count_train = np.isnan(X_train).sum()
+    inf_count_train = np.isinf(X_train).sum()
+    if nan_count_train > 0 or inf_count_train > 0:
+        print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
+        print("Bu değerler otomatik olarak temizlenecek.")
+        # Ekstra güvenlik - NaN'ları temizle
+        X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+        X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
+        X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # Sınıf ağırlıklarını hesapla - y_train'in one-hot olduğundan emin olalım
+    # One-hot encoded veriyi 1D sınıf dizisine dönüştür
+    if len(y_train.shape) > 1 and y_train.shape[1] > 1:  # one-hot format
+        y_int = y_train.argmax(1)
+    else:  # Zaten 1D dizi formatında
+        # LabelEncoder tarafından dönüştürülmemiş olabilir, dönüştürelim
+        if not np.issubdtype(y_train.dtype, np.number):
+            y_int = le_star.transform(y_train)
+        else:
+            y_int = y_train
+            
+    print(f"Etiket türü: {type(y_int)}, Örnek etiketler: {y_int[:5]}")
     cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
     cw_dict = dict(enumerate(cw))
     

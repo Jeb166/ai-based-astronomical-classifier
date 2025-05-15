@@ -116,8 +116,7 @@ def main():
     
     # ------------------------------------------------------------------
     # 7) STAR SUB‑CLASS MODEL
-    # ------------------------------------------------------------------
-      # A) Yıldız veri setini yükle
+    # ------------------------------------------------------------------    # A) Yıldız veri setini yükle
     print("\n" + "="*70)
     print("YILDIZ ALT TÜR MODELİ EĞİTİMİ VE OPTİMİZASYONU".center(70))
     print("="*70)
@@ -137,11 +136,30 @@ def main():
             Xs_tr = np.nan_to_num(Xs_tr, nan=0.0, posinf=0.0, neginf=0.0)
             Xs_val = np.nan_to_num(Xs_val, nan=0.0, posinf=0.0, neginf=0.0)
             Xs_te = np.nan_to_num(Xs_te, nan=0.0, posinf=0.0, neginf=0.0)
+          # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
+        print("\nYıldız alt tür etiketlerini hazırlıyorum...")
+        # ys_tr doğrudan sayısal one-hot encoded format mı?
+        if isinstance(ys_tr, np.ndarray) and len(ys_tr.shape) == 2:
+            print("Etiketler zaten one-hot kodlanmış.")
+            y_int = np.argmax(ys_tr, axis=1)
+        # Yoksa string veya sayısal sınıf değerlerini içeren bir dizi mi?
+        else:
+            # Kategorik string değerleri ise LabelEncoder ile dönüştür
+            if not np.issubdtype(ys_tr.dtype, np.number):
+                print("Kategorik etiketleri sayısal değerlere dönüştürüyorum...")
+                y_int = le_star.transform(ys_tr)
+            else:
+                print("Etiketler zaten sayısal format.")
+                y_int = ys_tr
         
         # Sınıf ağırlıklarını hesapla
-        y_int = ys_tr.argmax(1)
-        cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-        cw_dict = dict(enumerate(cw))
+        unique_classes = np.unique(y_int)
+        print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
+        print(f"Örnek etiketler: {y_int[:5]}")
+        
+        # Class weights hesapla
+        cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
+        cw_dict = dict(zip(unique_classes, cw))
         
         # B) Yıldız Modeli Eğitimi
         print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
@@ -252,7 +270,9 @@ def run_advanced_star_model():
             import sys
             import subprocess
             subprocess.check_call([sys.executable, "-m", "pip", "install", "scikit-optimize"])
-            print("scikit-optimize başarıyla yüklendi!")        # Model eğitimi için iki seçenek sun
+            print("scikit-optimize başarıyla yüklendi!")
+            
+        # Model eğitimi için iki seçenek sun
         print("\n" + "="*70)
         print("GELİŞMİŞ YILDIZ MODELİ EĞİTİM SEÇENEKLERİ".center(70))
         print("="*70)
@@ -294,8 +314,7 @@ def run_advanced_star_model():
             
             print("\n" + "="*70)
             print("EN İYİ PARAMETRELERLE YILDIZ MODELİ EĞİTİLİYOR".center(70))
-            print("="*70)
-              # Veriyi yükle
+            print("="*70)            # Veriyi yükle
             print("Veri yükleniyor...")
             data_path_star = 'data/star_subtypes.csv'
             X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
@@ -311,11 +330,30 @@ def run_advanced_star_model():
                 X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
                 X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
                 X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
+              # Etiketlerin durumunu kontrol et ve güvenli bir şekilde dönüştür
+            print("\nYıldız alt tür etiketlerini hazırlıyorum...")
+            # y_train doğrudan sayısal one-hot encoded format mı?
+            if isinstance(y_train, np.ndarray) and len(y_train.shape) == 2:
+                print("Etiketler zaten one-hot kodlanmış.")
+                y_int = np.argmax(y_train, axis=1)
+            # Yoksa string veya sayısal sınıf değerlerini içeren bir dizi mi?
+            else:
+                # Kategorik string değerleri ise LabelEncoder ile dönüştür
+                if not np.issubdtype(y_train.dtype, np.number):
+                    print("Kategorik etiketleri sayısal değerlere dönüştürüyorum...")
+                    y_int = le_star.transform(y_train)
+                else:
+                    print("Etiketler zaten sayısal format.")
+                    y_int = y_train
             
             # Sınıf ağırlıklarını hesapla
-            y_int = y_train.argmax(1)
-            cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-            cw_dict = dict(enumerate(cw))
+            unique_classes = np.unique(y_int)
+            print(f"Benzersiz sınıf sayısı: {len(unique_classes)}")
+            print(f"Örnek etiketler: {y_int[:5]}")
+            
+            # Class weights hesapla
+            cw = class_weight.compute_class_weight("balanced", classes=unique_classes, y=y_int)
+            cw_dict = dict(zip(unique_classes, cw))
             
             # Daha dengeli parametrelerle modeli oluştur
             print("\nYıldız modeli daha dengeli parametrelerle oluşturuluyor...")
