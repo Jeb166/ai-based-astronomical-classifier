@@ -1,0 +1,524 @@
+import streamlit as st
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+import joblib
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from astroquery.sdss import SDSS
+from astropy.coordinates import SkyCoord
+from astropy import units as u
+from PIL import Image
+import io
+import requests
+import plotly.express as px
+import plotly.graph_objects as go
+import base64
+from io import BytesIO
+
+# UI başlığı ve açıklaması
+st.set_page_config(
+    page_title="Astronomik Sınıflandırıcı",
+    page_icon="🔭",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.title("AI Tabanlı Astronomik Gök Cismi Sınıflandırıcı")
+st.markdown("""
+Bu uygulama, derin öğrenme ve makine öğrenmesi yöntemleri kullanarak astronomik gök cisimlerini 
+sınıflandırır. SDSS verilerini kullanarak galaksi, kuasar ve yıldız tespiti yapabilirsiniz.
+""")
+
+# ---------------------------------------------------------------------
+# Model yükleme işlevi
+# ---------------------------------------------------------------------
+@st.cache_resource
+def load_models(model_dir='outputs'):
+    """Eğitilmiş modelleri yükler"""
+    try:
+        # DNN modelini yükle
+        dnn_path = os.path.join(model_dir, 'dnn_model.keras')
+        dnn = load_model(dnn_path)
+        
+        # Random Forest modelini yükle
+        rf_path = os.path.join(model_dir, 'rf_model.joblib')
+        rf = joblib.load(rf_path)
+        
+        # Etiketleri ve en iyi ağırlığı belirle
+        # Not: Gerçek uygulamada bu değerler bir config dosyasından yüklenebilir
+        labels = np.array(['GALAXY', 'QSO', 'STAR'])
+        best_w = 0.10  # Çıktıda görülen en iyi ağırlık değeri
+        
+        return dnn, rf, labels, best_w
+    except Exception as e:
+        st.error(f"Model yüklenirken hata oluştu: {str(e)}")
+        return None, None, None, None
+
+# ---------------------------------------------------------------------
+# Tahmin işlevi
+# ---------------------------------------------------------------------
+def predict(sample_array, dnn, rf, labels, best_w):
+    """Yeni veri için tahmin yapar"""
+    try:
+        # DNN ve RF tahminlerini al
+        dnn_probs = dnn.predict(sample_array)
+        rf_probs = rf.predict_proba(sample_array)
+        
+        # Ensemble tahminini hesapla
+        ens_probs = best_w * dnn_probs + (1 - best_w) * rf_probs
+        primary = ens_probs.argmax(1)
+        
+        # Sınıf etiketlerini ve olasılıkları döndür
+        predictions = [labels[cls] for cls in primary]
+        probabilities = ens_probs.max(axis=1)
+        
+        return predictions, probabilities, ens_probs
+    except Exception as e:
+        st.error(f"Tahmin yaparken hata oluştu: {str(e)}")
+        return None, None, None
+
+# ---------------------------------------------------------------------
+# SDSS'den görüntü ve verileri alma
+# ---------------------------------------------------------------------
+def get_sdss_image(ra, dec, scale=0.5, width=256, height=256):
+    """SDSS'den gök cismi görüntüsünü indirir"""
+    try:
+        # Görüntü URL'si
+        url = f"https://skyserver.sdss.org/dr16/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}"
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            return Image.open(BytesIO(response.content))
+        else:
+            st.error(f"Görüntü indirilemedi. Durum kodu: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"SDSS görüntüsü alınırken hata oluştu: {str(e)}")
+        return None
+
+def get_sdss_spectrum(ra, dec, radius=2*u.arcsec):
+    """SDSS'den spektrum verilerini alır"""
+    try:
+        # Koordinatları tanımla
+        coords = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
+        
+        # Spektrum verilerini sorgula
+        spectrum_data = SDSS.get_spectra(coordinates=coords, radius=radius)
+        
+        if len(spectrum_data) > 0:
+            # Spektrum verisinden dalga boyu ve akı verilerini al
+            spectrum = spectrum_data[0][1].data
+            wavelength = 10**spectrum['loglam']
+            flux = spectrum['flux']
+            return wavelength, flux
+        else:
+            st.warning(f"Belirtilen koordinatta spektrum verisi bulunamadı: RA={ra}, Dec={dec}")
+            return None, None
+    except Exception as e:
+        st.error(f"SDSS spektrumu alınırken hata oluştu: {str(e)}")
+        return None, None
+
+def get_sdss_photometry(ra, dec, radius=2*u.arcsec):
+    """SDSS'den fotometrik verileri alır"""
+    try:
+        # Koordinatları tanımla
+        coords = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
+        
+        # Fotometrik verileri sorgula
+        phot_data = SDSS.query_region(coordinates=coords, radius=radius, photoobj_fields=['petroMag_u', 'petroMag_g', 'petroMag_r', 'petroMag_i', 'petroMag_z'])
+        
+        if phot_data is not None and len(phot_data) > 0:
+            # Fotometrik verileri pandas DataFrame'e dönüştür
+            df = phot_data.to_pandas()
+            return df
+        else:
+            st.warning(f"Belirtilen koordinatta fotometrik veri bulunamadı: RA={ra}, Dec={dec}")
+            return None
+    except Exception as e:
+        st.error(f"SDSS fotometrik verileri alınırken hata oluştu: {str(e)}")
+        return None
+
+# ---------------------------------------------------------------------
+# Özellikleri çıkarmak için işlev
+# ---------------------------------------------------------------------
+def extract_features_from_photometry(phot_data):
+    """Fotometrik verilerden model için gereken özellikleri çıkarır"""
+    if phot_data is None or len(phot_data) == 0:
+        return None
+    
+    try:
+        # İlk satırı al
+        row = phot_data.iloc[0]
+        
+        # Temel özellikler
+        u = row['petroMag_u']
+        g = row['petroMag_g']
+        r = row['petroMag_r']
+        i = row['petroMag_i']
+        z = row['petroMag_z']
+        
+        # Renk özellikleri
+        u_g = u - g
+        g_r = g - r
+        r_i = r - i
+        i_z = i - z
+        
+        # Özellik vektörünü oluştur - bu özellikler, modelinize uygun olarak ayarlanmalıdır
+        features = np.array([[u, g, r, i, z, u_g, g_r, r_i, i_z]])
+        
+        return features
+    except Exception as e:
+        st.error(f"Özellikler çıkarılırken hata oluştu: {str(e)}")
+        return None
+
+# ---------------------------------------------------------------------
+# Ana UI yapısı
+# ---------------------------------------------------------------------
+# Yan panel (sidebar) oluşturma
+st.sidebar.header("Gök Cismi Araştırma")
+st.sidebar.markdown("SDSS veri tabanını kullanarak gök cismi sınıflandırması yapın.")
+
+# Giriş metodu seçimi
+input_method = st.sidebar.radio(
+    "Giriş metodu seçin:",
+    ["Koordinat ile Arama", "CSV Dosyası Yükleme", "Örnek Veriler"]
+)
+
+# Modellleri yükle
+dnn, rf, labels, best_w = load_models()
+
+if dnn is not None and rf is not None:
+    st.sidebar.success("Modeller başarıyla yüklendi! 🚀")
+    
+    # Koordinat ile arama
+    if input_method == "Koordinat ile Arama":
+        st.subheader("Koordinat ile Gök Cismi Ara")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ra = st.number_input("Sağ açıklık (RA, derece)", min_value=0.0, max_value=360.0, value=180.0)
+        
+        with col2:
+            dec = st.number_input("Dik açıklık (Dec, derece)", min_value=-90.0, max_value=90.0, value=0.0)
+        
+        if st.button("Ara ve Sınıflandır", type="primary"):
+            # İşlem başladı mesajı
+            with st.spinner("SDSS'den veri alınıyor ve analiz ediliyor..."):
+                # Görüntüyü al
+                image = get_sdss_image(ra, dec)
+                
+                # Fotometrik verileri al
+                phot_data = get_sdss_photometry(ra, dec)
+                
+                # Spektrum verilerini al
+                wavelength, flux = get_sdss_spectrum(ra, dec)
+                
+                # Veriler alındı, görüntüle
+                if image is not None or phot_data is not None:
+                    # Feature'ları çıkar
+                    features = extract_features_from_photometry(phot_data)
+                    
+                    # Tahmin yap
+                    if features is not None:
+                        predictions, probabilities, all_probs = predict(features, dnn, rf, labels, best_w)
+                        
+                        # Sonuçları göster
+                        if predictions is not None:
+                            # Tahmin sonuçları
+                            col1, col2 = st.columns([1, 2])
+                            
+                            with col1:
+                                if image is not None:
+                                    st.image(image, caption=f"SDSS Görüntüsü (RA: {ra:.4f}, Dec: {dec:.4f})")
+                                
+                                # Tahmin sonucunu büyük bir kutu içinde göster
+                                object_type = predictions[0]
+                                probability = probabilities[0] * 100
+                                
+                                st.markdown(f"""
+                                <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px;'>
+                                    <h2 style='text-align: center; color: #0066cc;'>{object_type}</h2>
+                                    <p style='text-align: center; font-size: 18px;'>Güven: {probability:.2f}%</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Sınıf olasılıklarını göster
+                                st.subheader("Sınıf Olasılıkları")
+                                probs_df = pd.DataFrame({
+                                    'Sınıf': labels,
+                                    'Olasılık (%)': all_probs[0] * 100
+                                })
+                                
+                                # Çubuk grafiği
+                                fig = px.bar(probs_df, x='Sınıf', y='Olasılık (%)', 
+                                            color='Olasılık (%)', color_continuous_scale='Viridis',
+                                            text_auto='.2f')
+                                fig.update_layout(height=300)
+                                st.plotly_chart(fig, use_container_width=True)
+                            
+                            with col2:
+                                # Fotometrik verileri göster
+                                if phot_data is not None:
+                                    st.subheader("Fotometrik Veriler")
+                                    # Okunabilir bir format oluştur
+                                    readable_phot = pd.DataFrame({
+                                        'Bant': ['u', 'g', 'r', 'i', 'z'],
+                                        'Parlaklık (mag)': [
+                                            phot_data.iloc[0]['petroMag_u'],
+                                            phot_data.iloc[0]['petroMag_g'],
+                                            phot_data.iloc[0]['petroMag_r'],
+                                            phot_data.iloc[0]['petroMag_i'],
+                                            phot_data.iloc[0]['petroMag_z']
+                                        ]
+                                    })
+                                    
+                                    # Renk-Parlaklık grafiği
+                                    fig = px.scatter(readable_phot, x='Bant', y='Parlaklık (mag)', 
+                                                    size=[10]*5, color='Parlaklık (mag)')
+                                    fig.update_layout(yaxis_autorange="reversed")  # Astronomide parlaklık ters
+                                    st.plotly_chart(fig, use_container_width=True)
+                                
+                                # Spektrum verilerini göster
+                                if wavelength is not None and flux is not None:
+                                    st.subheader("Spektrum")
+                                    
+                                    # Spektrum grafiği
+                                    spec_df = pd.DataFrame({
+                                        'Dalga Boyu (Å)': wavelength,
+                                        'Akı': flux
+                                    })
+                                    
+                                    fig = px.line(spec_df, x='Dalga Boyu (Å)', y='Akı')
+                                    fig.update_layout(height=300)
+                                    st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.warning("Tahmin yapılamadı. Lütfen farklı bir koordinat deneyin.")
+                    else:
+                        st.warning("Özellikler çıkarılamadı. Lütfen farklı bir koordinat deneyin.")
+                else:
+                    st.warning("Belirtilen koordinatlarda SDSS verisi bulunamadı. Lütfen farklı bir koordinat deneyin.")
+
+    # CSV dosyası yükleme
+    elif input_method == "CSV Dosyası Yükleme":
+        st.subheader("CSV Dosyası Yükle ve Sınıflandır")
+        
+        st.markdown("""
+        CSV dosyanızın en azından aşağıdaki sütunları içermesi gerekiyor:
+        - `u`, `g`, `r`, `i`, `z`: SDSS filtre parlaklıkları
+        
+        Opsiyonel olarak gök cisimlerinin koordinatlarını da ekleyebilirsiniz:
+        - `ra`: Sağ açıklık (derece)
+        - `dec`: Dik açıklık (derece)
+        """)
+        
+        uploaded_file = st.file_uploader("CSV dosyası seçin", type=["csv"])
+        
+        if uploaded_file is not None:
+            # CSV dosyasını oku
+            try:
+                df = pd.read_csv(uploaded_file)
+                st.success(f"Dosya başarıyla yüklendi. {len(df)} satır bulundu.")
+                
+                # İlk birkaç satırı göster
+                st.dataframe(df.head())
+                
+                # Gerekli sütunları kontrol et
+                required_columns = ['u', 'g', 'r', 'i', 'z']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                
+                if missing_columns:
+                    st.error(f"CSV dosyasında gerekli sütunlar eksik: {missing_columns}")
+                else:
+                    if st.button("Toplu Sınıflandırma Yap", type="primary"):
+                        # İşlem başladı mesajı
+                        with st.spinner("Sınıflandırma yapılıyor..."):
+                            # Özellikleri hazırla
+                            features_list = []
+                            for idx, row in df.iterrows():
+                                u, g, r, i, z = row['u'], row['g'], row['r'], row['i'], row['z']
+                                u_g, g_r, r_i, i_z = u-g, g-r, r-i, i-z
+                                features_list.append([u, g, r, i, z, u_g, g_r, r_i, i_z])
+                            
+                            features_array = np.array(features_list)
+                            
+                            # Tahmin yap
+                            predictions, probabilities, all_probs = predict(features_array, dnn, rf, labels, best_w)
+                            
+                            if predictions is not None:
+                                # Sonuçları DataFrame'e ekle
+                                df['predicted_class'] = predictions
+                                df['confidence'] = probabilities * 100
+                                
+                                for i, label in enumerate(labels):
+                                    df[f'prob_{label}'] = all_probs[:, i] * 100
+                                
+                                # Sonuçları göster
+                                st.subheader("Sınıflandırma Sonuçları")
+                                st.dataframe(df)
+                                
+                                # Sınıf dağılımını göster
+                                st.subheader("Sınıf Dağılımı")
+                                class_counts = df['predicted_class'].value_counts().reset_index()
+                                class_counts.columns = ['Sınıf', 'Sayı']
+                                
+                                fig = px.pie(class_counts, values='Sayı', names='Sınıf', title='Tahmin Edilen Sınıfların Dağılımı')
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                # CSV olarak indirme seçeneği
+                                csv = df.to_csv(index=False)
+                                b64 = base64.b64encode(csv.encode()).decode()
+                                href = f'<a href="data:file/csv;base64,{b64}" download="predictions.csv">Sonuçları CSV Olarak İndir</a>'
+                                st.markdown(href, unsafe_allow_html=True)
+                            else:
+                                st.error("Tahmin yapılırken bir hata oluştu.")
+            except Exception as e:
+                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")
+    
+    # Örnek veriler
+    else:
+        st.subheader("Örnek Verilerle Tanıtım")
+        
+        # Örnek gök cisimleri
+        examples = {
+            "M87 (Galaksi)": {"ra": 187.7059, "dec": 12.3911, "type": "Galaksi", "desc": "M87, Virgo galaksi kümesinde yer alan dev bir eliptik galaksidir. Devasa bir süper kütleli kara delik barındırır."},
+            "3C 273 (Kuasar)": {"ra": 187.2779, "dec": 2.0524, "type": "Kuasar", "desc": "3C 273, Dünya'dan gözlemlenebilen en parlak kuasarlardan biridir. Yaklaşık 2.4 milyar ışık yılı uzaklıktadır."},
+            "Vega (Yıldız)": {"ra": 279.2347, "dec": 38.7836, "type": "Yıldız", "desc": "Vega, Lir takımyıldızında bulunan parlak bir yıldızdır. Dünya'dan yaklaşık 25 ışık yılı uzaklıktadır."},
+        }
+        
+        selected_example = st.selectbox("Örnek bir gök cismi seçin:", list(examples.keys()))
+        
+        # Seçilen örneği göster
+        example = examples[selected_example]
+        st.markdown(f"""
+        **{selected_example}**  
+        * Tür: {example['type']}
+        * RA: {example['ra']:.4f}°
+        * Dec: {example['dec']:.4f}°
+        * {example['desc']}
+        """)
+        
+        if st.button("Örneği Analiz Et", type="primary"):
+            # İşlem başladı mesajı
+            with st.spinner("SDSS'den veri alınıyor ve analiz ediliyor..."):
+                ra, dec = example['ra'], example['dec']
+                
+                # Görüntüyü al
+                image = get_sdss_image(ra, dec)
+                
+                # Fotometrik verileri al
+                phot_data = get_sdss_photometry(ra, dec)
+                
+                # Spektrum verilerini al
+                wavelength, flux = get_sdss_spectrum(ra, dec)
+                
+                # Veriler alındı, görüntüle
+                if image is not None or phot_data is not None:
+                    # Feature'ları çıkar
+                    features = extract_features_from_photometry(phot_data)
+                    
+                    # Tahmin yap
+                    if features is not None:
+                        predictions, probabilities, all_probs = predict(features, dnn, rf, labels, best_w)
+                        
+                        # Sonuçları göster
+                        if predictions is not None:
+                            # Tahmin sonuçları
+                            col1, col2 = st.columns([1, 2])
+                            
+                            with col1:
+                                if image is not None:
+                                    st.image(image, caption=f"SDSS Görüntüsü (RA: {ra:.4f}, Dec: {dec:.4f})")
+                                
+                                # Tahmin sonucunu büyük bir kutu içinde göster
+                                object_type = predictions[0]
+                                probability = probabilities[0] * 100
+                                
+                                st.markdown(f"""
+                                <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px;'>
+                                    <h2 style='text-align: center; color: #0066cc;'>{object_type}</h2>
+                                    <p style='text-align: center; font-size: 18px;'>Güven: {probability:.2f}%</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Modelin tahmini ve gerçek değer karşılaştırması
+                                expected_type = example['type'].upper()
+                                if "GALAKSI" in expected_type or "GALAXY" in expected_type:
+                                    expected_type = "GALAXY"
+                                
+                                if object_type == expected_type:
+                                    st.success(f"Tahmin doğru! Beklenen: {expected_type}")
+                                else:
+                                    st.warning(f"Tahmin beklenen türle eşleşmiyor. Beklenen: {expected_type}")
+                                
+                                # Sınıf olasılıklarını göster
+                                st.subheader("Sınıf Olasılıkları")
+                                probs_df = pd.DataFrame({
+                                    'Sınıf': labels,
+                                    'Olasılık (%)': all_probs[0] * 100
+                                })
+                                
+                                # Çubuk grafiği
+                                fig = px.bar(probs_df, x='Sınıf', y='Olasılık (%)', 
+                                            color='Olasılık (%)', color_continuous_scale='Viridis',
+                                            text_auto='.2f')
+                                fig.update_layout(height=300)
+                                st.plotly_chart(fig, use_container_width=True)
+                            
+                            with col2:
+                                # Fotometrik verileri göster
+                                if phot_data is not None:
+                                    st.subheader("Fotometrik Veriler")
+                                    # Okunabilir bir format oluştur
+                                    readable_phot = pd.DataFrame({
+                                        'Bant': ['u', 'g', 'r', 'i', 'z'],
+                                        'Parlaklık (mag)': [
+                                            phot_data.iloc[0]['petroMag_u'],
+                                            phot_data.iloc[0]['petroMag_g'],
+                                            phot_data.iloc[0]['petroMag_r'],
+                                            phot_data.iloc[0]['petroMag_i'],
+                                            phot_data.iloc[0]['petroMag_z']
+                                        ]
+                                    })
+                                    
+                                    # Renk-Parlaklık grafiği
+                                    fig = px.scatter(readable_phot, x='Bant', y='Parlaklık (mag)', 
+                                                    size=[10]*5, color='Parlaklık (mag)')
+                                    fig.update_layout(yaxis_autorange="reversed")  # Astronomide parlaklık ters
+                                    st.plotly_chart(fig, use_container_width=True)
+                                
+                                # Spektrum verilerini göster
+                                if wavelength is not None and flux is not None:
+                                    st.subheader("Spektrum")
+                                    
+                                    # Spektrum grafiği
+                                    spec_df = pd.DataFrame({
+                                        'Dalga Boyu (Å)': wavelength,
+                                        'Akı': flux
+                                    })
+                                    
+                                    fig = px.line(spec_df, x='Dalga Boyu (Å)', y='Akı')
+                                    fig.update_layout(height=300)
+                                    st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.warning("Tahmin yapılamadı. Lütfen farklı bir örnek deneyin.")
+                    else:
+                        st.warning("Özellikler çıkarılamadı. Lütfen farklı bir örnek deneyin.")
+                else:
+                    st.warning("Belirtilen koordinatlarda SDSS verisi bulunamadı. Lütfen farklı bir örnek deneyin.")
+else:
+    st.error("Modeller yüklenemedi. Lütfen 'outputs' klasöründe modellerin varlığını kontrol edin.")
+
+# ---------------------------------------------------------------------
+# Footer
+# ---------------------------------------------------------------------
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center;">
+    <p>Bu uygulama AI tabanlı bir astronomik sınıflandırıcıdır.</p>
+    <p>Veri kaynağı: <a href="https://www.sdss.org/">Sloan Digital Sky Survey (SDSS)</a></p>
+</div>
+""", unsafe_allow_html=True)
