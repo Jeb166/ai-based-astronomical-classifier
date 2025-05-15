@@ -109,9 +109,32 @@ def train_star_model(model, X_train, y_train, X_val, y_val, class_weights=None,
         y_train_sample = y_train[idx]
     else:
         X_train_sample, y_train_sample = X_train, y_train
-    
-    # Callback'leri hazırla
+      # Callback'leri hazırla
     callbacks = []
+    
+    # NaN değerleri izleyen özel callback
+    class NaNMonitor(Callback):
+        """Eğitim sırasında NaN/Inf değerleri izler ve hata verirse uyarır"""
+        
+        def __init__(self):
+            super(NaNMonitor, self).__init__()
+            
+        def on_batch_end(self, batch, logs=None):
+            logs = logs or {}
+            loss = logs.get('loss')
+            if loss is not None and (np.isnan(loss) or np.isinf(loss)):
+                print(f"\n\nUYARI: NaN/Inf loss değeri tespit edildi: {loss}")
+                # Model ağırlıklarını kontrol et
+                for layer in self.model.layers:
+                    weights = layer.get_weights()
+                    for i, w in enumerate(weights):
+                        if np.isnan(w).any() or np.isinf(w).any():
+                            print(f"Sorunlu katman bulundu: {layer.name}, ağırlık indeksi {i}")
+                
+                # Eğitimi durdur
+                self.model.stop_training = True
+                
+    callbacks.append(NaNMonitor())
     
     # 1. Trendi izleyen erken durdurma
     if use_trending_early_stop:

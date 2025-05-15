@@ -117,57 +117,94 @@ def main():
     # ------------------------------------------------------------------
     # 7) STAR SUB‑CLASS MODEL
     # ------------------------------------------------------------------
-    
-    # A) Yıldız veri setini yükle
+      # A) Yıldız veri setini yükle
     print("\n" + "="*70)
     print("YILDIZ ALT TÜR MODELİ EĞİTİMİ VE OPTİMİZASYONU".center(70))
     print("="*70)
     
-    Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
-    
-    # Sınıf ağırlıklarını hesapla
-    y_int = ys_tr.argmax(1)
-    cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
-    cw_dict = dict(enumerate(cw))
-      # B) Yıldız Modeli Eğitimi
-    print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
-    print("-" * 40)
-    
-    # Model boyutları
-    n_features = Xs_tr.shape[1]
-    n_classes = ys_tr.shape[1]
-    
-    print("Yıldız modeli eğitiliyor...")
-    print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
-      # Modeli oluştur
-    star_net = build_star_model(
-        n_features, n_classes,
-        neurons1=434,
-        neurons2=99,
-        neurons3=107,
-        dropout1=0.379,
-        dropout2=0.334,
-        dropout3=0.230,
-        learning_rate=0.00024
-    )
-    
-    # Gelişmiş stratejileri kullanarak eğit
-    star_net, history = train_star_model(
-        star_net, Xs_tr, ys_tr, Xs_val, ys_val, 
-        class_weights=cw_dict,
-        batch_size=128,
-        epochs=20,
-        use_cyclic_lr=True,
-        use_trending_early_stop=True
-    )
-      # Test doğruluğunu hesapla
-    star_acc = (star_net.predict(Xs_te).argmax(1) == ys_te.argmax(1)).mean() * 100
-    print(f"\nYıldız alt türleri test doğruluğu: {star_acc:.2f}%")
-    
-    # Modeli kaydet
-    star_net.save(f"{out_dir}/star_model.keras")
-    joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
-    joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
+    # Veri yükleme
+    try:
+        Xs_tr, Xs_val, Xs_te, ys_tr, ys_val, ys_te, le_star, scaler_star = load_star_subset(data_path_star)
+        
+        # Veri kontrolü - NaN/Inf değerleri tespit için
+        print("Veri kontrol ediliyor...")
+        nan_count_train = np.isnan(Xs_tr).sum()
+        inf_count_train = np.isinf(Xs_tr).sum()
+        if nan_count_train > 0 or inf_count_train > 0:
+            print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
+            print("Bu değerler otomatik olarak temizlenecek.")
+            # Ekstra güvenlik - NaN'ları temizle
+            Xs_tr = np.nan_to_num(Xs_tr, nan=0.0, posinf=0.0, neginf=0.0)
+            Xs_val = np.nan_to_num(Xs_val, nan=0.0, posinf=0.0, neginf=0.0)
+            Xs_te = np.nan_to_num(Xs_te, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Sınıf ağırlıklarını hesapla
+        y_int = ys_tr.argmax(1)
+        cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
+        cw_dict = dict(enumerate(cw))
+        
+        # B) Yıldız Modeli Eğitimi
+        print("\nYILDIZ ALT TÜR MODELİ EĞİTİMİ")
+        print("-" * 40)
+        
+        # Model boyutları
+        n_features = Xs_tr.shape[1]
+        n_classes = ys_tr.shape[1]
+        
+        print("Yıldız modeli eğitiliyor...")
+        print(f"Özellik sayısı: {n_features}, Sınıf sayısı: {n_classes}")
+        
+        # Modeli oluştur - optimize edilmiş parametreleri kullan
+        star_net = build_star_model(
+            n_features, n_classes,
+            neurons1=490,         # Arttırıldı: 434 -> 490
+            neurons2=120,         # Arttırıldı: 99 -> 120
+            neurons3=120,         # Arttırıldı: 107 -> 120
+            dropout1=0.4,         # Ayarlandı: 0.379 -> 0.4
+            dropout2=0.35,        # Ayarlandı: 0.334 -> 0.35
+            dropout3=0.25,        # Ayarlandı: 0.230 -> 0.25
+            learning_rate=0.0002  # Ayarlandı: 0.00024 -> 0.0002
+        )
+        
+        # Gelişmiş stratejileri kullanarak eğit
+        star_net, history = train_star_model(
+            star_net, Xs_tr, ys_tr, Xs_val, ys_val, 
+            class_weights=cw_dict,
+            batch_size=64,        # Daha küçük: 128 -> 64 (daha iyi genelleme)
+            epochs=30,            # Daha uzun: 20 -> 30
+            use_cyclic_lr=True,
+            use_trending_early_stop=True
+        )
+        
+        # Test doğruluğunu hesapla
+        y_pred = star_net.predict(Xs_te)
+        star_acc = (y_pred.argmax(1) == ys_te.argmax(1)).mean() * 100
+        print(f"\nYıldız alt türleri test doğruluğu: {star_acc:.2f}%")
+        
+        # Confusion matrix - yıldız alt türleri
+        plt.figure(figsize=(10, 8))
+        y_pred_classes = y_pred.argmax(1)
+        y_true_classes = ys_te.argmax(1)
+        cm = confusion_matrix(y_true_classes, y_pred_classes)
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=le_star.classes_, yticklabels=le_star.classes_)
+        plt.title('Yıldız Alt Türleri - Confusion Matrix')
+        plt.xlabel('Tahmin Edilen')
+        plt.ylabel('Gerçek')
+        plt.tight_layout()
+        plt.savefig(f"{out_dir}/star_subtypes_confusion.png", dpi=150)
+        plt.show()
+        
+        # Modeli kaydet
+        star_net.save(f"{out_dir}/star_model.keras")
+        joblib.dump(le_star, f"{out_dir}/star_label_enc.joblib")
+        joblib.dump(scaler_star, f"{out_dir}/star_scaler.joblib")
+        
+    except Exception as e:
+        print(f"Yıldız modeli eğitiminde hata: {str(e)}")
+        print("Yıldız alt tür modeli eğitimi atlanıyor.")
+        # Boş değerler ata ki ilerideki kod çalışsın
+        star_net, le_star, scaler_star = None, None, None
     
     # ------------------ helper for UI / further use -----------------
     global full_predict
@@ -258,12 +295,24 @@ def run_advanced_star_model():
             print("\n" + "="*70)
             print("EN İYİ PARAMETRELERLE YILDIZ MODELİ EĞİTİLİYOR".center(70))
             print("="*70)
-            
-            # Veriyi yükle
+              # Veriyi yükle
             print("Veri yükleniyor...")
             data_path_star = 'data/star_subtypes.csv'
             X_train, X_val, X_test, y_train, y_val, y_test, le_star, scaler_star = load_star_subset(data_path_star)
-              # Sınıf ağırlıklarını hesapla
+            
+            # Veri kontrolü - NaN/Inf değerleri tespit için
+            print("Veri kontrol ediliyor...")
+            nan_count_train = np.isnan(X_train).sum()
+            inf_count_train = np.isinf(X_train).sum()
+            if nan_count_train > 0 or inf_count_train > 0:
+                print(f"UYARI: Eğitim verisinde {nan_count_train} NaN ve {inf_count_train} Inf değer bulundu.")
+                print("Bu değerler otomatik olarak temizlenecek.")
+                # Ekstra güvenlik - NaN'ları temizle
+                X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+                X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
+                X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
+            
+            # Sınıf ağırlıklarını hesapla
             y_int = y_train.argmax(1)
             cw = class_weight.compute_class_weight("balanced", classes=np.unique(y_int), y=y_int)
             cw_dict = dict(enumerate(cw))
@@ -273,18 +322,17 @@ def run_advanced_star_model():
             
             # Model boyutları
             n_features = X_train.shape[1]
-            n_classes = y_train.shape[1]
-              # Modeli oluştur (optimize edilmiş parametrelerle)
+            n_classes = y_train.shape[1]            # Modeli oluştur (optimize edilmiş parametrelerle)
             best_model = build_star_model(
                 input_dim=n_features, 
                 n_classes=n_classes,
-                neurons1=434,
-                neurons2=99,
-                neurons3=107,
-                dropout1=0.379,
-                dropout2=0.334,
-                dropout3=0.230,
-                learning_rate=0.00024
+                neurons1=490,         # Arttırıldı: 434 -> 490
+                neurons2=120,         # Arttırıldı: 99 -> 120
+                neurons3=120,         # Arttırıldı: 107 -> 120
+                dropout1=0.4,         # Ayarlandı: 0.379 -> 0.4
+                dropout2=0.35,        # Ayarlandı: 0.334 -> 0.35
+                dropout3=0.25,        # Ayarlandı: 0.230 -> 0.25
+                learning_rate=0.0002  # Ayarlandı: 0.00024 -> 0.0002
             )
             
             # Modeli eğit
@@ -294,8 +342,8 @@ def run_advanced_star_model():
                 X_train, y_train, 
                 X_val, y_val, 
                 class_weights=cw_dict,
-                batch_size=128,  # default batch size
-                epochs=20,
+                batch_size=64,         # Daha küçük: 128 -> 64 (daha iyi genelleme)
+                epochs=30,             # Daha uzun: 20 -> 30
                 use_cyclic_lr=True,
                 use_trending_early_stop=True
             )
