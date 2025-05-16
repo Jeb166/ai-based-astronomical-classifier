@@ -58,8 +58,7 @@ def load_models(model_dir='outputs'):
         # Random Forest modelini yükle
         rf_path = os.path.join(model_dir, 'rf_model.joblib')
         rf = joblib.load(rf_path)
-        
-        # Modellerin giriş ve çıkış boyutlarını kontrol et
+          # Modellerin giriş ve çıkış boyutlarını kontrol et
         scaler_path = os.path.join(model_dir, 'scaler.joblib')
         scaler = joblib.load(scaler_path)
 
@@ -67,11 +66,11 @@ def load_models(model_dir='outputs'):
         # Not: Gerçek uygulamada bu değerler bir config dosyasından yüklenebilir
         labels = np.array(['GALAXY', 'QSO', 'STAR'])
         best_w = 0.10  # Çıktıda görülen en iyi ağırlık değeri
-
+        
         return dnn, rf, scaler, labels, best_w
     except Exception as e:
         st.error(f"Model yüklenirken hata oluştu: {str(e)}")
-        return None, None, None, None
+        return None, None, None, None, None
 
 # ---------------------------------------------------------------------
 # Tahmin işlevi
@@ -170,6 +169,9 @@ def extract_features_from_photometry(phot_data):
         return None
     
     try:
+        # İlk satırı al
+        row = phot_data.iloc[0]
+        
         u, g, r, i, z = row['petroMag_u'], row['petroMag_g'], row['petroMag_r'], row['petroMag_i'], row['petroMag_z']
         return make_feature_vector(u, g, r, i, z)          # ⬅️ tek satır yeter
     except Exception as e:

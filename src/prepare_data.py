@@ -48,12 +48,12 @@ def load_and_prepare(filename: str):
 
     # Scale features (fit on train only)
     scaler = StandardScaler()
-    scaler.fit(X_train)
+    scaler.fit(X_train)    
     X_train = pd.DataFrame(scaler.transform(X_train), columns=X_train.columns)
     X_validation = pd.DataFrame(scaler.transform(X_validation), columns=X_validation.columns)
     X_test = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
 
-    return X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df
+    return X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df, scaler
 
 def load_star_subset(filename: str):
     import pandas as pd

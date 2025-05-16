@@ -37,12 +37,10 @@ def main():
     # ------------------------------------------------------------------
     data_path = 'data/skyserver.csv'
     out_dir = 'outputs'
-    os.makedirs(out_dir, exist_ok=True)
-
-    # ------------------------------------------------------------------
+    os.makedirs(out_dir, exist_ok=True)    # ------------------------------------------------------------------
     # 1) LOAD GALAXY/QSO/STAR DATA
     # ------------------------------------------------------------------
-    X_tr, X_val, X_te, y_tr, y_val, y_te, df_full = load_and_prepare(data_path)
+    X_tr, X_val, X_te, y_tr, y_val, y_te, df_full, scaler = load_and_prepare(data_path)
     y_tr_lbl  = y_tr.argmax(1)
     y_val_lbl = y_val.argmax(1)
     y_te_lbl  = y_te.argmax(1)
