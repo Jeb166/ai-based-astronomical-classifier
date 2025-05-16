@@ -18,6 +18,18 @@ import plotly.graph_objects as go
 import base64
 from io import BytesIO
 
+# -------------------------------------------------
+# 9-özelliklik (u,g,r,i,z + 4 renk farkı) vektör
+# -------------------------------------------------
+def make_feature_vector(u, g, r, i, z):
+    u_g = u - g
+    g_r = g - r
+    r_i = r - i
+    i_z = i - z
+    # şekil = (1, 9)  —  model tam bunu bekliyor
+    return np.array([[u, g, r, i, z, u_g, g_r, r_i, i_z]])
+
+
 # UI başlığı ve açıklaması
 st.set_page_config(
     page_title="Astronomik Sınıflandırıcı",
@@ -47,12 +59,16 @@ def load_models(model_dir='outputs'):
         rf_path = os.path.join(model_dir, 'rf_model.joblib')
         rf = joblib.load(rf_path)
         
+        # Modellerin giriş ve çıkış boyutlarını kontrol et
+        scaler_path = os.path.join(model_dir, 'scaler.joblib')
+        scaler = joblib.load(scaler_path)
+
         # Etiketleri ve en iyi ağırlığı belirle
         # Not: Gerçek uygulamada bu değerler bir config dosyasından yüklenebilir
         labels = np.array(['GALAXY', 'QSO', 'STAR'])
         best_w = 0.10  # Çıktıda görülen en iyi ağırlık değeri
-        
-        return dnn, rf, labels, best_w
+
+        return dnn, rf, scaler, labels, best_w
     except Exception as e:
         st.error(f"Model yüklenirken hata oluştu: {str(e)}")
         return None, None, None, None
@@ -60,31 +76,25 @@ def load_models(model_dir='outputs'):
 # ---------------------------------------------------------------------
 # Tahmin işlevi
 # ---------------------------------------------------------------------
-def predict(sample_array, dnn, rf, labels, best_w):
+def predict(sample_array, dnn, rf, scaler, labels, best_w):
     """Yeni veri için tahmin yapar"""
     try:
-        # DNN ve RF tahminlerini al
-        dnn_probs = dnn.predict(sample_array)
-        rf_probs = rf.predict_proba(sample_array)
-        
-        # Ensemble tahminini hesapla
-        ens_probs = best_w * dnn_probs + (1 - best_w) * rf_probs
-        
-        # Sınıf dengesizliği düzeltme faktörleri
-        # Bias düzeltme (GALAXY sınıfına olan önyargıyı azaltmak için)
-        bias_correction = np.array([0.7, 1.2, 1.3])  # GALAXY için düşürücü, diğer sınıflar için artırıcı
-        
-        # Düzeltilmiş olasılıkları hesapla ve normalize et
-        corrected_probs = ens_probs * bias_correction
-        corrected_probs = corrected_probs / corrected_probs.sum(axis=1, keepdims=True)
-        
-        primary = corrected_probs.argmax(1)
-        
-        # Sınıf etiketlerini ve olasılıkları döndür
-        predictions = [labels[cls] for cls in primary]
-        probabilities = corrected_probs.max(axis=1)
-        
-        return predictions, probabilities, corrected_probs
+        """Ölçekle ➜ DNN & RF ➜ Ağırlıklı oy."""
+        # 1) StandardScaler
+        X = scaler.transform(sample_array)
+
+        # 2) Olasılıklar
+        dnn_probs = dnn.predict(X, verbose=0)
+        rf_probs  = rf.predict_proba(X)
+
+        # 3) Ensemble
+        ens_probs = best_w*dnn_probs + (1-best_w)*rf_probs
+
+        # 4) Sonuç
+        primary       = ens_probs.argmax(1)
+        predictions   = labels[primary]
+        probabilities = ens_probs.max(1)
+        return predictions, probabilities, ens_probs
     except Exception as e:
         st.error(f"Tahmin yaparken hata oluştu: {str(e)}")
         return None, None, None
@@ -160,47 +170,8 @@ def extract_features_from_photometry(phot_data):
         return None
     
     try:
-        # İlk satırı al
-        row = phot_data.iloc[0]
-        
-        # Temel özellikler
-        u = row['petroMag_u']
-        g = row['petroMag_g']
-        r = row['petroMag_r']
-        i = row['petroMag_i']
-        z = row['petroMag_z']
-        
-        # Renk özellikleri
-        u_g = u - g
-        g_r = g - r
-        r_i = r - i
-        i_z = i - z
-        
-        # Renk oranları
-        u_over_g = u / g
-        g_over_r = g / r
-        r_over_i = r / i
-        i_over_z = i / z
-        
-        # Polinom özellikler
-        u_g_squared = u_g ** 2
-        g_r_squared = g_r ** 2
-        r_i_squared = r_i ** 2  # Polinom özellikleri tamamlayalım ama şimdilik kullanmayalım
-        i_z_squared = i_z ** 2  # Polinom özellikleri tamamlayalım ama şimdilik kullanmayalım
-        
-        # İkili çarpımlar
-        u_mul_g = u * g  # İkili çarpımları tamamlayalım ama şimdilik kullanmayalım
-        g_mul_r = g * r  # İkili çarpımları tamamlayalım ama şimdilik kullanmayalım
-        
-        # Test sonuçlarına bakarak, modelin en fazla önem verdiği özellikleri ilk sıralarda kullanmaya çalışalım:
-        # RF özellik önem sıralamasına göre r-i, r/i ve (u-g)² özelliklerinin önemi yüksek çıkmıştı
-        
-        # Tüm özellikleri birleştir (modelin beklediği 15 özellik)
-        features = np.array([[u, g, r, i, z, u_g, g_r, r_i, i_z, 
-                              u_over_g, g_over_r, r_over_i, i_over_z,
-                              u_g_squared, g_r_squared]])
-        
-        return features
+        u, g, r, i, z = row['petroMag_u'], row['petroMag_g'], row['petroMag_r'], row['petroMag_i'], row['petroMag_z']
+        return make_feature_vector(u, g, r, i, z)          # ⬅️ tek satır yeter
     except Exception as e:
         st.error(f"Özellikler çıkarılırken hata oluştu: {str(e)}")
         return None
@@ -219,7 +190,7 @@ input_method = st.sidebar.radio(
 )
 
 # Modellleri yükle
-dnn, rf, labels, best_w = load_models()
+dnn, rf, scaler, labels, best_w = load_models()
 
 if dnn is not None and rf is not None:
     st.sidebar.success("Modeller başarıyla yüklendi! 🚀")
@@ -255,7 +226,7 @@ if dnn is not None and rf is not None:
                     
                     # Tahmin yap
                     if features is not None:
-                        predictions, probabilities, all_probs = predict(features, dnn, rf, labels, best_w)
+                        predictions, probabilities, all_probs = predict(features, dnn, rf, scaler, labels, best_w)
                         
                         # Sonuçları göster
                         if predictions is not None:
@@ -367,36 +338,14 @@ if dnn is not None and rf is not None:
                         # İşlem başladı mesajı
                         with st.spinner("Sınıflandırma yapılıyor..."):
                             # Özellikleri hazırla (15 özellik: temel, renk, oran ve polinom)
-                            features_list = []
-                            for idx, row in df.iterrows():
-                                # Her satır için özellikleri çıkar
-                                u, g, r, i, z = row['u'], row['g'], row['r'], row['i'], row['z']
-                                
-                                # Renk özellikleri
-                                u_g = u - g
-                                g_r = g - r
-                                r_i = r - i
-                                i_z = i - z
-                                
-                                # Renk oranları
-                                u_over_g = u / g
-                                g_over_r = g / r
-                                r_over_i = r / i
-                                i_over_z = i / z
-                                
-                                # Polinom özellikler
-                                u_g_squared = u_g ** 2
-                                g_r_squared = g_r ** 2
-                                
-                                # 15 özelliği ekle (modelin beklediği sayı)
-                                features_list.append([u, g, r, i, z, u_g, g_r, r_i, i_z,
-                                                    u_over_g, g_over_r, r_over_i, i_over_z,
-                                                    u_g_squared, g_r_squared])
-                            
-                            features_array = np.array(features_list)
+                            features_list = [
+                                make_feature_vector(row['u'], row['g'], row['r'], row['i'], row['z'])[0]
+                                for _, row in df.iterrows()
+                            ]
+                            features_array = np.vstack(features_list)
                             
                             # Tahmin yap
-                            predictions, probabilities, all_probs = predict(features_array, dnn, rf, labels, best_w)
+                            predictions, probabilities, all_probs = predict(features_array, dnn, rf, scaler, labels, best_w)
                             
                             if predictions is not None:
                                 # Sonuçları DataFrame'e ekle
@@ -486,7 +435,7 @@ if dnn is not None and rf is not None:
                     
                     # Tahmin yap
                     if features is not None:
-                        predictions, probabilities, all_probs = predict(features, dnn, rf, labels, best_w)
+                        predictions, probabilities, all_probs = predict(features, dnn, rf, scaler, labels, best_w)
                         
                         # Sonuçları göster
                         if predictions is not None:

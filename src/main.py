@@ -111,6 +111,7 @@ def main():
     dnn.save(f"{out_dir}/dnn_model.keras")
     import joblib
     joblib.dump(rf, f"{out_dir}/rf_model.joblib")
+    joblib.dump(scaler, f"{out_dir}/scaler.joblib")
     
     # İşlem tamamlandı mesajı
     print("\nTemel sınıflandırma modeli eğitimi tamamlandı!")
