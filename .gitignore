@@ -7,6 +7,7 @@ __pycache__/
 
 # ─ virtual‑envs ─────────────────────────────────
 .venv/
+.venv310/
 env/
 venv/
 
@@ -39,3 +40,4 @@ data/**
 *.fits
 *.jpg
 *.png
+.venv310/Lib/site-packages/tensorflow/include/tensorflow/core/common_runtime/pluggable_device/pluggable_device.h
