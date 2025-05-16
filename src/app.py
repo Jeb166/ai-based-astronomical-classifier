@@ -19,15 +19,29 @@ import base64
 from io import BytesIO
 
 # -------------------------------------------------
-# 9-özelliklik (u,g,r,i,z + 4 renk farkı) vektör
+# 15-özelliklik vektör (model için tam gereken şekilde)
 # -------------------------------------------------
 def make_feature_vector(u, g, r, i, z):
+    # Renk özellikleri 
     u_g = u - g
     g_r = g - r
     r_i = r - i
     i_z = i - z
-    # şekil = (1, 9)  —  model tam bunu bekliyor
-    return np.array([[u, g, r, i, z, u_g, g_r, r_i, i_z]])
+    
+    # Renk oranları 
+    u_over_g = u / g
+    g_over_r = g / r
+    r_over_i = r / i
+    i_over_z = i / z
+    
+    # Polinom özellikler
+    u_g_squared = u_g ** 2
+    g_r_squared = g_r ** 2
+    
+    # şekil = (1, 15) — model tam bunu bekliyor
+    return np.array([[u, g, r, i, z, u_g, g_r, r_i, i_z, 
+                      u_over_g, g_over_r, r_over_i, i_over_z,
+                      u_g_squared, g_r_squared]])
 
 
 # UI başlığı ve açıklaması
