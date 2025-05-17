@@ -16,6 +16,28 @@ Projede yapılan optimizasyonlar:
 
 ## Nasıl Çalıştırılır
 
+### Yerel Bilgisayarda Çalıştırma
+
+1. Gerekli paketleri yükleyin:
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. Modüler yapıda çalıştırmak için:
+   ```
+   python main.py
+   ```
+   
+   veya doğrudan streamlit uygulamasını başlatmak için:
+   ```
+   streamlit run src/streamlit.py
+   ```
+
+3. Orijinal (modüler olmayan) versiyonu çalıştırmak için:
+   ```
+   streamlit run src/app.py
+   ```
+
 ### Google Colab'da Çalıştırma
 
 1. `astronomy_classifier_optimized.ipynb` dosyasını Google Colab'a yükleyin
