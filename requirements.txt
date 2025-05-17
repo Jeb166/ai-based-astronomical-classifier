@@ -12,3 +12,4 @@ pillow>=9.0.0
 plotly>=5.10.0
 astroquery>=0.4.6
 astropy>=5.0.0
+streamlit-js-eval==0.1.5

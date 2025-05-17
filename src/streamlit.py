@@ -5,12 +5,41 @@ import plotly.express as px
 import base64
 from PIL import Image
 from io import BytesIO
+import streamlit.components.v1 as components
+import urllib.parse as ul
+import requests
 
 # Model işlevlerini ve tahmin işlevlerini içe aktar
 from prediction import (
     load_models, predict_optimized, get_sdss_image, get_sdss_spectrum, 
     get_sdss_photometry, extract_features_from_photometry, make_feature_vector
 )
+
+# En yakın SDSS objesini bulmak için yardımcı fonksiyon
+import requests
+def query_nearest_obj(ra, dec, radius=0.01):
+    """
+    Verilen koordinatlara yakın gök cisimlerini araştırır.
+    
+    Parameters:
+        ra (float): Sağ açıklık (derece)
+        dec (float): Dik açıklık (derece)
+        radius (float): Arama yarıçapı (derece); 0.01° ≈ 36 açı saniyesi
+        
+    Returns:
+        pandas.DataFrame: Bulunan gök cisimlerinin verileri
+    """
+    url = (f"https://skyserver.sdss.org/dr18/SkyServerWS/SearchTools"
+           f"/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json")
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            js = response.json()
+            return pd.DataFrame(js)  # objId, u,g,r,i,z vs. içeren DataFrame
+        return None
+    except Exception as e:
+        st.error(f"SDSS radial arama hatası: {str(e)}")
+        return None
 
 # UI başlığı ve açıklaması
 st.set_page_config(
@@ -49,17 +78,149 @@ if dnn is not None and rf is not None:
     if input_method == "Koordinat ile Arama":
         st.subheader("Koordinat ile Gök Cismi Ara")
         
+        # Aladin Lite harita görüntüleyici ekleme
+        st.markdown("### Etkileşimli Gökyüzü Haritası")
+        st.markdown("Aşağıdaki haritada herhangi bir noktaya tıklayarak o koordinatları otomatik olarak seçebilirsiniz.")
+        
+        import streamlit.components.v1 as components
+        
+        aladin_html = """
+        <div id="aladin-lite-div" style="height:500px;"></div>
+        <script src="https://aladin.u-strasbg.fr/AladinLite/api/v3/latest/aladin.min.js"></script>
+        <link rel="stylesheet" href="https://aladin.u-strasbg.fr/AladinLite/api/v3/latest/aladin.min.css">
+        <script>
+            let aladin;
+            
+            function initAladin() {
+                aladin = A.aladin('#aladin-lite-div', {
+                    survey: "P/DSS2/color",
+                    fov: 0.5,
+                    target: "180 0",
+                    cooFrame: "J2000",
+                    reticleSize: 22,
+                    showReticle: true,
+                    showZoomControl: true,
+                    showFullscreenControl: true,
+                    showLayersControl: true,
+                    showGotoControl: true,
+                    showFrame: true,
+                    fullScreen: false
+                });
+                
+                // SDSS DR18 katmanını ekle
+                aladin.createImageSurvey('SDSS DR18 Color', 'SDSS DR18 Color', 
+                    'https://dr18.sdss.org/sas/dr18/eboss/photoObj/frames/color/', 
+                    'SDSSg', 'SDSSi', '2mass');
+                    
+                // Tıklamayı dinle
+                aladin.on('click', function(object) {
+                    const ra = object.ra.toFixed(6);
+                    const dec = object.dec.toFixed(6);
+                    // Streamlit'e mesaj gönder
+                    parent.postMessage({type: 'aladin', ra: ra, dec: dec}, '*');
+                });
+            }
+            
+            document.addEventListener('DOMContentLoaded', function() {
+                initAladin();
+            });
+        </script>
+        <style>
+            .aladin-box {
+                z-index: 1000 !important;
+            }
+        </style>
+        """
+        
+        # JavaScript ile Streamlit arasında iletişimi sağlayan kod
+        js_code = """
+        <script>
+            window.addEventListener('message', function(event) {
+                if (event.data.type === 'aladin') {
+                    const ra = event.data.ra;
+                    const dec = event.data.dec;
+                    
+                    // Streamlit uygulamasına veriyi gönder
+                    const raInput = window.parent.document.querySelector('input[data-testid="stNumberInput"][aria-label="Sağ açıklık (RA, derece)"]');
+                    const decInput = window.parent.document.querySelector('input[data-testid="stNumberInput"][aria-label="Dik açıklık (Dec, derece)"]');
+                    
+                    if (raInput && decInput) {
+                        // Değerleri güncelle
+                        raInput.value = ra;
+                        decInput.value = dec;
+                        
+                        // Değişikliği tetikle
+                        raInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        decInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        
+                        // Kullanıcıya bildir
+                        console.log('Koordinatlar güncellendi: RA=' + ra + '°, Dec=' + dec + '°');
+                    }
+                }
+            });
+        </script>
+        """        # Aladin ve JavaScript'i ekle
+        components.html(aladin_html + js_code, height=520)
+        
+        # Kullanıcıya bilgilendir
+        st.info("Haritada bir noktaya tıklandığında, koordinatlar otomatik olarak form alanlarına doldurulacaktır.")
+        
+        # SDSS Navigator URL'inden koordinat çıkarma
+        import urllib.parse as ul
+        url = st.text_input("SDSS Navi URL'sini yapıştır (örn: https://skyserver.sdss.org/dr18/VisualTools/navi?ra=146.47818&dec=41.73088...)")
+        if url and "ra=" in url and "dec=" in url:
+            qs = ul.parse_qs(ul.urlparse(url).query)
+            ra_url = float(qs.get("ra", [0])[0])            
+            dec_url = float(qs.get("dec", [0])[0])
+            # Session state kullanarak giriş alanlarını güncelle
+            st.session_state["ra"] = ra_url
+            st.session_state["dec"] = dec_url
+            st.success(f"Koordinatlar yakalandı: RA={ra_url:.4f}°, Dec={dec_url:.4f}°")
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            ra = st.number_input("Sağ açıklık (RA, derece)", min_value=0.0, max_value=360.0, value=180.0)
+            ra = st.number_input("Sağ açıklık (RA, derece)", min_value=0.0, max_value=360.0, value=180.0, key="ra")
         
         with col2:
-            dec = st.number_input("Dik açıklık (Dec, derece)", min_value=-90.0, max_value=90.0, value=0.0)
+            dec = st.number_input("Dik açıklık (Dec, derece)", min_value=-90.0, max_value=90.0, value=0.0, key="dec")
+            
+        # Arama seçenekleri
+        col1, col2 = st.columns(2)
+        with col1:
+            search_option = st.radio(
+                "Arama seçeneği:",
+                ["Direkt Koordinat", "En Yakın SDSS Objesini Bul"],
+                index=0,
+                help="Direkt koordinat: Tam olarak girilen RA/Dec kullanılır. En yakın: Girilen koordinata en yakın SDSS objesi bulunur."
+            )
+        with col2:
+            radius = st.number_input(
+                "Arama yarıçapı (derece)",
+                min_value=0.001,
+                max_value=0.1,
+                value=0.01,
+                format="%.3f",
+                help="En yakın obje araması için kullanılacak yarıçap (derece cinsinden). 0.01° yaklaşık 36 açı saniyesine eşittir."
+            )
         
         if st.button("Ara ve Sınıflandır", type="primary"):
             # İşlem başladı mesajı
             with st.spinner("SDSS'den veri alınıyor ve analiz ediliyor..."):
+                # En yakın objeyi bulma seçeneği etkinse
+                if search_option == "En Yakın SDSS Objesini Bul":
+                    nearest_objs = query_nearest_obj(ra, dec, radius)
+                    
+                    if nearest_objs is not None and not nearest_objs.empty:
+                        # İlk objeyi seç (en yakın)
+                        nearest_obj = nearest_objs.iloc[0]
+                        # Koordinatları güncelle
+                        ra = nearest_obj.get('ra', ra)
+                        dec = nearest_obj.get('dec', dec)
+                        st.success(f"En yakın obje bulundu: RA={ra:.4f}°, Dec={dec:.4f}°")
+                    else:
+                        st.warning(f"Belirtilen koordinatlarda ({ra:.4f}°, {dec:.4f}°) ve {radius}° yarıçapında hiçbir SDSS objesi bulunamadı.")
+                
                 # Görüntüyü al
                 image = get_sdss_image(ra, dec)
                 
