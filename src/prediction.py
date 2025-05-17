@@ -232,7 +232,7 @@ def predict_optimized(sample_array, dnn, rf, scaler, labels):
             
             if most_likely_class == 0:
                 # RF galaksi diyor
-                bias_correction = np.array([2.0, 0.6, 0.4])
+                    bias_correction = np.array([2.0, 0.6, 0.4])
             elif most_likely_class == 1:
                 # RF kuasar diyor
                 bias_correction = np.array([0.5, 2.5, 0.5])

@@ -16,15 +16,14 @@ def load_and_prepare(filename: str):
     if len(categorical_cols) > 0:
         print(f"Veri setinde kategorik sütunlar bulundu: {categorical_cols}")
         print("Bu sütunlar kaldırılıyor...")
-        sdss_df = sdss_df.drop(columns=categorical_cols)
-
-    # Drop physically insignificant columns
+        sdss_df = sdss_df.drop(columns=categorical_cols)    # Drop physically insignificant columns
     drop_cols = []
-    for col in ['objid', 'specobjid', 'run', 'rerun', 'camcol', 'field']:
+    for col in ['objid', 'specobjid', 'run', 'rerun', 'camcol', 'field', 'ra', 'dec']:  # ra ve dec eklendi
         if col in sdss_df.columns:
             drop_cols.append(col)
     
     if drop_cols:
+        print(f"Önemli olmayan ve koordinat sütunları kaldırılıyor: {drop_cols}")
         sdss_df = sdss_df.drop(drop_cols, axis=1)
 
     # --- Color indices (fotometrik farklar) ---
@@ -173,15 +172,13 @@ def load_star_subset(filename: str):
     # Sadece sayısal sütunlar için medyan hesapla
     medians = star_df[numeric_cols].median()
     # NaN değerleri sadece sayısal sütunlar için ilgili medyanlarla doldur
-    star_df[numeric_cols] = star_df[numeric_cols].fillna(medians)
-
-    # ------------------------------------------------------------------
+    star_df[numeric_cols] = star_df[numeric_cols].fillna(medians)    # ------------------------------------------------------------------
     # 4)  Özellik / etiket ayrımı ve split
     # ------------------------------------------------------------------
     y = star_df["subClass"]
     X = star_df.drop(
         ["class", "subClass", "objid", "specobjid",
-         "run", "rerun", "camcol", "field"],
+         "run", "rerun", "camcol", "field", "ra", "dec"],  # ra ve dec eklendi
         axis=1
     )
 

@@ -110,10 +110,18 @@ def main():
     import joblib
     joblib.dump(rf, f"{out_dir}/rf_model.joblib")
     joblib.dump(scaler, f"{out_dir}/scaler.joblib")
-    
-    # İşlem tamamlandı mesajı
+      # İşlem tamamlandı mesajı
     print("\nTemel sınıflandırma modeli eğitimi tamamlandı!")
     print(f"Modeller {out_dir} klasörüne kaydedildi.")
+    
+    # Özellik önemliliği analizi
+    print("\n" + "="*70)
+    print("RANDOM FOREST ÖZELLİK ÖNEMİ ANALİZİ".center(70))
+    print("="*70)
+    
+    # Özellik önemlerini analiz et
+    importance_df = analyze_feature_importance(rf, X_tr.columns)
+    group_importance = analyze_feature_groups(importance_df)
     
     # ------------------ helper for UI / further use -----------------
     global full_predict
@@ -149,6 +157,262 @@ def print_helper():
     print(f"- {out_dir}/rf_model.joblib: Random Forest modeli")
     print(f"- {out_dir}/[çeşitli görseller].png: Performans grafikleri")
 
+def analyze_feature_importance(rf_model, feature_names):
+    """RF modelinde özellik önemi analizi yapar"""
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import os
+    
+    # Çıktı dizini
+    out_dir = 'outputs'
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Özellik önemlerini al
+    feature_importance = rf_model.feature_importances_
+    
+    # Önem sırasına göre sırala
+    sorted_idx = np.argsort(feature_importance)
+    
+    # Görselleştirme
+    plt.figure(figsize=(12, 8))
+    
+    # Tüm özelliklerin grafiği
+    plt.subplot(1, 2, 1)
+    plt.title("Özellik Önemliliği (Artan Sırada)")
+    plt.barh(range(len(sorted_idx)), feature_importance[sorted_idx], color='skyblue')
+    plt.yticks(range(len(sorted_idx)), [feature_names[i] for i in sorted_idx])
+    plt.xlabel('Önem Derecesi')
+    
+    # En önemli 10 özelliğin grafiği
+    plt.subplot(1, 2, 2)
+    top_idx = sorted_idx[-10:]  # En önemli 10 özelliğin indeksleri
+    plt.title("En Önemli 10 Özellik")
+    plt.barh(range(len(top_idx)), feature_importance[top_idx], color='lightgreen')
+    plt.yticks(range(len(top_idx)), [feature_names[i] for i in top_idx])
+    plt.xlabel('Önem Derecesi')
+    
+    plt.tight_layout()
+    plt.savefig(f"{out_dir}/feature_importance.png", dpi=150)
+    plt.show()
+    
+    # En önemli özellikleri çıktı olarak ver
+    importance_df = pd.DataFrame({
+        'Özellik': feature_names,
+        'Önem': feature_importance
+    }).sort_values('Önem', ascending=False)
+    
+    print("\nTÜM ÖZELLİKLERİN ÖNEM SIRASI:")
+    pd.set_option('display.max_rows', 100)
+    print(importance_df)
+    pd.reset_option('display.max_rows')
+    
+    # En önemli 10 özellik
+    print("\nEN ÖNEMLİ 10 ÖZELLİK:")
+    print(importance_df.head(10))
+    
+    # Ra ve dec özelliklerinin önemleri
+    try:
+        ra_importance = importance_df[importance_df['Özellik'] == 'ra']['Önem'].values[0]
+        dec_importance = importance_df[importance_df['Özellik'] == 'dec']['Önem'].values[0]
+        
+        ra_rank = importance_df[importance_df['Özellik'] == 'ra'].index[0] + 1
+        dec_rank = importance_df[importance_df['Özellik'] == 'dec'].index[0] + 1
+        
+        print("\nASTRONOMİK REFERANS KOORDİNATLARI ANALİZİ:")
+        print(f"- 'ra' özelliği:  Önem değeri = {ra_importance:.6f}, Sıralaması: {ra_rank}/{len(feature_names)}")
+        print(f"- 'dec' özelliği: Önem değeri = {dec_importance:.6f}, Sıralaması: {dec_rank}/{len(feature_names)}")
+    except:
+        print("\nRa ve dec özellikleri veri setinde bulunamadı.")
+    
+    return importance_df
+
+def analyze_feature_groups(importance_df):
+    """Özellik gruplarının önem analizini yapar"""
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import os
+    import re
+    
+    # Çıktı dizini
+    out_dir = 'outputs'
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Özellik grupları tanımla
+    feature_groups = {
+        'Astronomik Koordinatlar': ['ra', 'dec'],
+        'Temel Parlaklıklar': ['u', 'g', 'r', 'i', 'z'],
+        'Renk İndeksleri': ['u_g', 'g_r', 'r_i', 'i_z'],
+        'Spektral Özellikler': [col for col in importance_df['Özellik'] if re.match(r'plate|mjd|fiberid', col)]
+    }
+    
+    # Diğer sütunları "Diğer" kategorisine ekle
+    all_grouped_features = []
+    for group in feature_groups.values():
+        all_grouped_features.extend(group)
+        
+    feature_groups['Diğer'] = [col for col in importance_df['Özellik'] if col not in all_grouped_features]
+    
+    # Her grubun ortalama önemini hesapla
+    group_importance = {}
+    for group_name, features in feature_groups.items():
+        # İlgili grup özelliklerini filtrele
+        group_features = importance_df[importance_df['Özellik'].isin(features)]
+        if not group_features.empty:
+            avg_importance = group_features['Önem'].mean()
+            group_importance[group_name] = {
+                'ortalama_önem': avg_importance,
+                'özellik_sayısı': len(group_features),
+                'özellikler': group_features['Özellik'].tolist()
+            }
+    
+    # Sonuçları görselleştir
+    plt.figure(figsize=(12, 6))
+    
+    # Ortalama önem grafiği
+    group_names = list(group_importance.keys())
+    avg_importances = [group_importance[g]['ortalama_önem'] for g in group_names]
+    feature_counts = [group_importance[g]['özellik_sayısı'] for g in group_names]
+    
+    # Renk haritası - özellik sayısına göre renk tonu değişsin
+    colors = plt.cm.viridis(np.array(feature_counts) / max(feature_counts))
+    
+    # Grafik çizimi
+    bars = plt.bar(group_names, avg_importances, color=colors)
+    plt.title('Özellik Gruplarının Ortalama Önem Değerleri')
+    plt.ylabel('Ortalama Önem')
+    plt.xticks(rotation=45)
+    
+    # Her çubuğun üstüne özellik sayısını yaz
+    for i, bar in enumerate(bars):
+        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.0005, 
+                f'n={feature_counts[i]}', 
+                ha='center', va='bottom', fontsize=9)
+    
+    plt.tight_layout()
+    plt.savefig(f"{out_dir}/feature_group_importance.png", dpi=150)
+    plt.show()
+    
+    # Grup önemlerini yazdır
+    print("\nÖZELLİK GRUPLARININ ORTALAMA ÖNEMİ:")
+    for group_name, info in sorted(group_importance.items(), key=lambda x: x[1]['ortalama_önem'], reverse=True):
+        print(f"\n{group_name}: {info['ortalama_önem']:.6f} (Özellik Sayısı: {info['özellik_sayısı']})")
+        print(f"  İçerdiği özellikler: {', '.join(info['özellikler'])}")
+        
+    return group_importance
+
+def evaluate_models():
+    """Kaydedilmiş modelleri değerlendirir ve karşılaştırır"""
+    import os
+    import joblib
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from sklearn.metrics import confusion_matrix, classification_report
+    import tensorflow as tf
+    
+    # Çıktı dizini
+    out_dir = 'outputs'
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Verileri yükle
+    print("Veriler hazırlanıyor...")
+    from prepare_data import load_and_prepare
+    data_path = 'data/skyserver.csv'
+    X_tr, X_val, X_te, y_tr, y_val, y_te, df_full, _ = load_and_prepare(data_path)
+    y_te_lbl = y_te.argmax(1)
+    
+    # Modelleri yükle
+    print("Modeller yükleniyor...")
+    dnn = tf.keras.models.load_model(f"{out_dir}/dnn_model.keras")
+    rf = joblib.load(f"{out_dir}/rf_model.joblib")
+    
+    # En iyi ağırlığı bul (validation seti üzerinde)
+    dnn_val = dnn.predict(X_val)
+    rf_val = rf.predict_proba(X_val)
+    y_val_lbl = y_val.argmax(1)
+    
+    best_w, best_acc = 0.5, 0.0
+    for w in np.linspace(0.1, 0.9, 9):
+        proba_acc = ((w*dnn_val+(1-w)*rf_val).argmax(1)==y_val_lbl).mean()
+        if proba_acc > best_acc:
+            best_w, best_acc = w, proba_acc
+    
+    print(f"Optimum DNN ağırlığı: {best_w:.2f} (validation acc={best_acc*100:.2f}%)")
+    
+    # Test seti sonuçlarını hesapla
+    dnn_probs = dnn.predict(X_te)
+    rf_probs = rf.predict_proba(X_te)
+    ens_probs = best_w*dnn_probs + (1-best_w)*rf_probs
+    
+    dnn_preds = dnn_probs.argmax(1)
+    rf_preds = rf_probs.argmax(1)
+    ens_preds = ens_probs.argmax(1)
+    
+    dnn_acc = (dnn_preds==y_te_lbl).mean()*100
+    rf_acc = (rf_preds==y_te_lbl).mean()*100
+    ens_acc = (ens_preds==y_te_lbl).mean()*100
+    
+    print(f"\nTest Sonuçları:")
+    print(f"DNN  Doğruluk: {dnn_acc:6.3f}%")
+    print(f"RF   Doğruluk: {rf_acc:6.3f}%")
+    print(f"ENS  Doğruluk: {ens_acc:6.3f}%")
+    
+    # Ensemble model için sınıflandırma raporu
+    labels = np.unique(df_full['class'])
+    print("\nEnsemble Model Sınıflandırma Raporu:")
+    print(classification_report(y_te_lbl, ens_preds, target_names=labels))
+    
+    # Görselleştirme
+    plt.figure(figsize=(15, 10))
+    
+    # Doğruluk karşılaştırması
+    plt.subplot(2, 2, 1)
+    model_names = ['DNN', 'Random Forest', 'Ensemble']
+    accuracies = [dnn_acc, rf_acc, ens_acc]
+    colors = ['skyblue', 'lightgreen', 'coral']
+    
+    plt.bar(model_names, accuracies, color=colors)
+    plt.ylim([min(accuracies) - 1, 100])
+    plt.xlabel('Model')
+    plt.ylabel('Test Doğruluğu (%)')
+    plt.title('Model Test Performansı Karşılaştırması')
+    
+    # Her modelin karışıklık matrisi
+    plt.subplot(2, 2, 2)
+    sns.heatmap(confusion_matrix(y_te_lbl, dnn_preds), annot=True, fmt='d',
+                xticklabels=labels, yticklabels=labels, cmap='Blues')
+    plt.title('DNN - Karışıklık Matrisi')
+    
+    plt.subplot(2, 2, 3)
+    sns.heatmap(confusion_matrix(y_te_lbl, rf_preds), annot=True, fmt='d',
+                xticklabels=labels, yticklabels=labels, cmap='Greens')
+    plt.title('Random Forest - Karışıklık Matrisi')
+    
+    plt.subplot(2, 2, 4)
+    sns.heatmap(confusion_matrix(y_te_lbl, ens_preds), annot=True, fmt='d',
+                xticklabels=labels, yticklabels=labels, cmap='Oranges')
+    plt.title('Ensemble - Karışıklık Matrisi')
+    
+    plt.tight_layout()
+    plt.savefig(f"{out_dir}/model_comparison.png", dpi=150)
+    plt.show()
+    
+    print(f"\nModel karşılaştırma görseli '{out_dir}/model_comparison.png' olarak kaydedildi.")
+    
+    # RF modelinin özellik analizini yap
+    print("\n" + "="*70)
+    print("RANDOM FOREST ÖZELLİK ÖNEMLİLİĞİ ANALİZİ".center(70))
+    print("="*70)
+    importance_df = analyze_feature_importance(rf, X_te.columns)
+    
+    # Özellik gruplarını analiz et
+    print("\n" + "="*70)
+    print("ÖZELLİK GRUPLARI ANALİZİ".center(70))
+    print("="*70)
+    group_importance = analyze_feature_groups(importance_df)
+    
+    return dnn, rf, best_w, importance_df, group_importance
+
 if __name__ == '__main__':
     # Gerekli kütüphaneleri kontrol et
     try:
@@ -175,12 +439,23 @@ if __name__ == '__main__':
         print(f"Eksik kütüphane bulundu: {e}")
         print("pip install scikit-learn pandas matplotlib joblib tensorflow seaborn")
     
-    # Ana modellerin eğitimi
-    print("\n" + "="*70)
-    print("ASTRONOMİK SINIFLANDIRICI EĞİTİMİ BAŞLATILIYOR".center(70))
-    print("="*70)
-      
-    # Ana modeli çalıştır
-    main()
+    # Seçenekleri göster
+    import sys
     
-    print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")
+    if len(sys.argv) > 1 and sys.argv[1] == "evaluate":
+        print("\n" + "="*70)
+        print("MODEL DEĞERLENDİRME MODU".center(70))
+        print("="*70)
+        evaluate_models()
+    else:
+        # Ana modellerin eğitimi
+        print("\n" + "="*70)
+        print("ASTRONOMİK SINIFLANDIRICI EĞİTİMİ BAŞLATILIYOR".center(70))
+        print("="*70)
+          
+        # Ana modeli çalıştır
+        main()
+        
+        print("\nİşlemler tamamlandı! Sonuçlar 'outputs' klasöründe.")
+        print("\nEğer eğitilmiş modelleri değerlendirmek isterseniz:")
+        print("python src/main.py evaluate")
