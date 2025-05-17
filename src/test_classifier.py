@@ -30,8 +30,10 @@ def error_print(msg):
 def load_test_models(model_dir='../outputs'):
     """Eğitilmiş modelleri yükler - Streamlit olmadan çalışacak şekilde"""
     try:
-        # DNN modelini yükle
-        model_dir_abs = os.path.abspath(model_dir)
+        # Doğru dizin yolunu belirle
+        # Göreli yol kullanarak çalışma dizinine göre doğru konumu belirleyelim
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_dir_abs = os.path.normpath(os.path.join(current_dir, model_dir))
         print(f"Model dizini: {model_dir_abs}")
         
         dnn_path = os.path.join(model_dir_abs, 'dnn_model.keras')
@@ -418,19 +420,151 @@ def analyze_test_results(results_df):
     except Exception as e:
         error_print(f"Sonuçlar analiz edilirken hata oluştu: {str(e)}")
 
+def test_dynamic_weighting():
+    """
+    Dinamik ağırlıklandırma stratejisini değerlendiren test fonksiyonu.
+    """
+    # Modelleri yükle
+    dnn, rf, scaler, labels, _ = load_test_models()
+    
+    # Modelleri kontrol et
+    if dnn is None or rf is None:
+        error_print("Modeller yüklenemedi. Test durduruluyor.")
+        return
+
+    print("\n" + "="*70)
+    print("DİNAMİK AĞIRLIKLANDIRMA STRATEJİSİ TESTİ".center(70))
+    print("="*70)
+    
+    # Test nesneleri
+    test_objects = [
+        # Galaksi örneği - Sönük, yüksek u değeri (>18)
+        {"name": "Galaksi", "u": 19.3, "g": 17.6, "r": 16.5, "i": 16.0, "z": 15.7},
+        # Kuasar örneği - Orta parlaklık, karakteristik kuasar renkleri
+        {"name": "Kuasar", "u": 18.4, "g": 18.1, "r": 17.8, "i": 17.5, "z": 17.2},
+        # Yıldız örneği - Parlak (düşük magnitude)
+        {"name": "Yıldız", "u": 15.5, "g": 14.4, "r": 13.8, "i": 13.5, "z": 13.4}
+    ]
+    
+    results = []
+    
+    # Her nesne için test et
+    for test_obj in test_objects:
+        print(f"\n\nTest Nesnesi: {test_obj['name']}")
+        print("-" * 40)
+        
+        # Özellikleri oluştur
+        features = make_feature_vector(
+            test_obj["u"], test_obj["g"], test_obj["r"], 
+            test_obj["i"], test_obj["z"]
+        )
+        
+        # 1. Farklı sabit DNN ağırlıklarını karşılaştır
+        print("\nSabit DNN Ağırlıkları Karşılaştırması:")
+        print("-" * 40)
+        
+        # Standart tahmin
+        X = scaler.transform(features)
+        dnn_probs = dnn.predict(X, verbose=0)
+        rf_probs = rf.predict_proba(X)
+        
+        print(f"DNN tahminleri: {dnn_probs[0]}")
+        print(f"RF tahminleri: {rf_probs[0]}")
+        
+        # Farklı sabit ağırlıklar dene
+        weights = [0.5, 0.3, 0.2, 0.1]
+        for w in weights:
+            ens_probs = w*dnn_probs + (1-w)*rf_probs
+            prediction = labels[ens_probs[0].argmax()]
+            print(f"DNN ağırlığı {w}: {prediction}")
+        
+        # 2. Niye potansiyel STAR olup olmadığını belirle
+        is_likely_star = False
+        if test_obj["u"] < 16.5 and test_obj["g"] < 15.0 and test_obj["r"] < 14.5:
+            is_likely_star = True
+        if rf_probs[0][2] > 0.1:
+            is_likely_star = True
+        if dnn_probs[0][2] > 0.99 and test_obj["u"] < 17.0 and test_obj["r"] < 15.0:
+            is_likely_star = True
+            
+        # 3. Dinamik ağırlık seçimi
+        if is_likely_star:
+            dnn_weight = 0.5  # Yıldızlar için yüksek DNN ağırlığı
+            bias_correction = np.array([0.5, 0.5, 2.0])
+        else:
+            dnn_weight = 0.3  # Galaksi/Kuasar için düşük DNN ağırlığı
+            if rf_probs[0][1] > rf_probs[0][0]:
+                bias_correction = np.array([0.8, 1.5, 0.5])
+            else:
+                bias_correction = np.array([1.5, 0.8, 0.5])
+        
+        # 4. Dinamik ağırlık ile tahmin yap
+        ens_probs = dnn_weight*dnn_probs + (1-dnn_weight)*rf_probs
+        print(f"\nDinamik DNN Ağırlığı: {dnn_weight}")
+        print(f"Seçilen bias düzeltme: {bias_correction}")
+        print(f"Düzeltme öncesi olasılıklar: {ens_probs[0]}")
+        
+        # 5. Bias düzeltme uygula
+        ens_probs = ens_probs * bias_correction
+        print(f"Düzeltme sonrası olasılıklar: {ens_probs[0]}")
+        
+        # 6. Sonuç
+        prediction = labels[ens_probs[0].argmax()]
+        probability = ens_probs[0].max() / np.sum(ens_probs[0])
+        
+        print(f"\nNihai tahmin: {prediction} (Güven: {probability*100:.2f}%)")
+          # 7. Beklenen sınıf ile karşılaştır
+        expected = test_obj["name"].upper()
+        if expected == "GALAKSI":
+            expected = "GALAXY"
+        elif expected == "KUASAR":
+            expected = "QSO"
+        elif expected == "YILDIZ":
+            expected = "STAR"
+        
+        is_correct = prediction == expected
+        print(f"Doğru mu? {'✓' if is_correct else '✗'} (Beklenen: {expected})")
+        
+        # 8. Sonuçları kaydet
+        results.append({
+            'Nesne': test_obj["name"],
+            'DNN Ağırlığı': dnn_weight,
+            'Bias Düzeltme': str(bias_correction),
+            'Tahmin': prediction,
+            'Beklenen': expected,
+            'Doğru': is_correct,
+            'Güven': probability*100
+        })
+    
+    # Sonuçları özet olarak göster
+    print("\n\n" + "="*70)
+    print("SONUÇLAR ÖZET".center(70))
+    print("="*70)
+    
+    correct_count = sum(1 for r in results if r['Doğru'])
+    print(f"Doğruluk: {correct_count}/{len(results)} ({correct_count/len(results)*100:.1f}%)")
+    
+    for r in results:
+        print(f"{r['Nesne']}: {r['Tahmin']} (Beklenen: {r['Beklenen']}) - " +
+              f"{'✓' if r['Doğru'] else '✗'} - Güven: {r['Güven']:.1f}%")
+    
+    print("="*70)
+
+    return results
+
 # ---------------------------------------------------------------------
 # Ana fonksiyon
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     import argparse
-    
-    # Komut satırı argümanlarını tanımla
+      # Komut satırı argümanlarını tanımla
     parser = argparse.ArgumentParser(description='AI Tabanlı Astronomik Sınıflandırıcı Test Programı')
     parser.add_argument('--test-all', action='store_true', help='Tüm test senaryolarını çalıştır')
     parser.add_argument('--csv', type=str, help='CSV dosyasından test et')
     parser.add_argument('--weight', type=float, default=0.2, help='DNN modeli ağırlığı (CSV testi için)')
     parser.add_argument('--bias', nargs='+', type=float, help='Bias düzeltme faktörleri (GALAXY, QSO, STAR sırasıyla)')
     parser.add_argument('--basic-test', action='store_true', help='Temel testi çalıştır')
+    parser.add_argument('--dynamic-test', action='store_true', help='Dinamik ağırlıklandırma testini çalıştır')
     
     args = parser.parse_args()
     
@@ -441,19 +575,24 @@ if __name__ == "__main__":
     elif not args.bias:
         # Varsayılan değerler
         bias_correction = np.array([2.0, 1.8, 0.3])
-    
-    # Test seçeneklerine göre çalıştır
+      # Test seçeneklerine göre çalıştır
     if args.test_all:
         print("Tüm test senaryoları çalıştırılıyor...")
-        test_all_scenarios()
+        test_all_scenarios()    
     elif args.csv:
         print(f"CSV dosyasından test yapılıyor: {args.csv}")
         print(f"DNN ağırlığı: {args.weight}, Bias düzeltme: {bias_correction}")
-        test_with_csv(args.csv, dnn_weight=args.weight, bias_correction=bias_correction)
+        print("CSV ile test fonksiyonu henüz uygulanmadı.")
+        # test_with_csv fonksiyonu henüz uygulanmadı, bu kısmı devre dışı bırakıyoruz
+    elif args.dynamic_test:
+        print("Dinamik ağırlıklandırma testi çalıştırılıyor...")
+        test_dynamic_weighting()
     elif args.basic_test:
         print("Temel test çalıştırılıyor...")
         test_classifier()
     else:
-        # Argüman verilmemişse, varsayılan olarak tüm senaryoları test et
-        print("Hiçbir seçenek belirtilmedi. Temel test çalıştırılıyor...")
-        test_classifier()
+        # Argüman verilmemişse, varsayılan olarak dinamik ağırlık testini çalıştır
+        print("Hiçbir seçenek belirtilmedi. Dinamik ağırlıklandırma testi çalıştırılıyor...")
+        test_dynamic_weighting()
+
+
