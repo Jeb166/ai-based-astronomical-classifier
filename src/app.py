@@ -63,7 +63,7 @@ sınıflandırır. SDSS verilerini kullanarak galaksi, kuasar ve yıldız tespit
 # ---------------------------------------------------------------------
 @st.cache_resource
 def load_models(model_dir='outputs'):
-    """Eğitilmiş modelleri yükler"""
+    """Eğitilmiş modelleri yükler"""    
     try:
         # DNN modelini yükle
         dnn_path = os.path.join(model_dir, 'dnn_model.keras')
@@ -72,14 +72,15 @@ def load_models(model_dir='outputs'):
         # Random Forest modelini yükle
         rf_path = os.path.join(model_dir, 'rf_model.joblib')
         rf = joblib.load(rf_path)
-          # Modellerin giriş ve çıkış boyutlarını kontrol et
+          
+        # Modellerin giriş ve çıkış boyutlarını kontrol et
         scaler_path = os.path.join(model_dir, 'scaler.joblib')
         scaler = joblib.load(scaler_path)
 
         # Etiketleri ve en iyi ağırlığı belirle
-        # Not: Gerçek uygulamada bu değerler bir config dosyasından yüklenebilir
+        # Not: Bu değerler yeniden eğitilmiş model için güncellenmelidir
         labels = np.array(['GALAXY', 'QSO', 'STAR'])
-        best_w = 0.10  # Çıktıda görülen en iyi ağırlık değeri
+        best_w = 0.5  # Dengeli veri için varsayılan ağırlık
         
         return dnn, rf, scaler, labels, best_w
     except Exception as e:
@@ -98,15 +99,37 @@ def predict(sample_array, dnn, rf, scaler, labels, best_w):
 
         # 2) Olasılıklar
         dnn_probs = dnn.predict(X, verbose=0)
-        rf_probs  = rf.predict_proba(X)
-
-        # 3) Ensemble
-        ens_probs = best_w*dnn_probs + (1-best_w)*rf_probs
-
+        rf_probs = rf.predict_proba(X)
+        
+        # Debug bilgisi
+        print(f"DNN tahminleri: {dnn_probs[0]}")
+        print(f"RF tahminleri: {rf_probs[0]}")
+        
+        # 2.5) DNN model ağırlığını düzeltme - DNN modeli çok yanlı olduğu için ağırlığını düşürelim
+        adjusted_w = 0.2  # DNN modelinin ağırlığını düşürüyoruz (önceki 0.5 idi)
+        
+        # 3) Ensemble - yeni ağırlık ile
+        ens_probs = adjusted_w*dnn_probs + (1-adjusted_w)*rf_probs
+        
+        # 3.5) Sınıf yanlılığını düzeltme (bias correction)
+        # Dengeli veri setinde eğitilmiş olsa da, modelin her şeyi STAR olarak tahmin etme eğilimini düzeltmek için
+        # her sınıf için özel düzeltme faktörleri uyguluyoruz
+        # GALAXY ve QSO sınıfları için daha yüksek, STAR için çok daha düşük faktör kullanıyoruz
+        bias_correction = np.array([2.0, 1.8, 0.3])  # GALAXY, QSO, STAR için düzeltme faktörleri - daha agresif
+        
+        # Düzeltme öncesi olasılıkları yazdır (debug)
+        print(f"Düzeltme öncesi olasılıklar: {ens_probs[0]}")
+        
+        # Düzeltme uygula
+        ens_probs = ens_probs * bias_correction
+        
+        # Düzeltme sonrası olasılıkları yazdır (debug)
+        print(f"Düzeltme sonrası olasılıklar: {ens_probs[0]}")
+        
         # 4) Sonuç
-        primary       = ens_probs.argmax(1)
-        predictions   = labels[primary]
-        probabilities = ens_probs.max(1)
+        primary = ens_probs.argmax(1)
+        predictions = labels[primary]
+        probabilities = ens_probs.max(1) / np.sum(ens_probs, axis=1)  # Normalize edilmiş olasılık
         return predictions, probabilities, ens_probs
     except Exception as e:
         st.error(f"Tahmin yaparken hata oluştu: {str(e)}")

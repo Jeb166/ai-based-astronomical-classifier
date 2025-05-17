@@ -8,14 +8,26 @@ def load_and_prepare(filename: str):
     # Read and shuffle data
     sdss_df = pd.read_csv(filename, encoding='utf-8')
     sdss_df = sdss_df.sample(frac=1)
+    
+    # Kategorik sütunları tespit et (sadece 'class' dışında)
+    categorical_cols = [col for col in sdss_df.select_dtypes(include=['object']).columns 
+                      if col != 'class']
+    
+    if len(categorical_cols) > 0:
+        print(f"Veri setinde kategorik sütunlar bulundu: {categorical_cols}")
+        print("Bu sütunlar kaldırılıyor...")
+        sdss_df = sdss_df.drop(columns=categorical_cols)
 
     # Drop physically insignificant columns
-    sdss_df = sdss_df.drop(
-        ['objid', 'specobjid', 'run', 'rerun', 'camcol', 'field'],
-        axis=1
-    )
+    drop_cols = []
+    for col in ['objid', 'specobjid', 'run', 'rerun', 'camcol', 'field']:
+        if col in sdss_df.columns:
+            drop_cols.append(col)
+    
+    if drop_cols:
+        sdss_df = sdss_df.drop(drop_cols, axis=1)
 
-        # --- Color indices (fotometrik farklar) ---
+    # --- Color indices (fotometrik farklar) ---
     sdss_df["u_g"] = sdss_df["u"] - sdss_df["g"]
     sdss_df["g_r"] = sdss_df["g"] - sdss_df["r"]
     sdss_df["r_i"] = sdss_df["r"] - sdss_df["i"]
@@ -29,29 +41,57 @@ def load_and_prepare(filename: str):
 
     train_df = sdss_df.iloc[:train_count]
     validation_df = sdss_df.iloc[train_count:train_count+val_count]
-    test_df = sdss_df.iloc[-test_count:]
-
-    # Extract features
+    test_df = sdss_df.iloc[-test_count:]    # Extract features
     X_train = train_df.drop(['class'], axis=1)
     X_validation = validation_df.drop(['class'], axis=1)
     X_test = test_df.drop(['class'], axis=1)
+    
+    # Sayısal olmayan sütunları kontrol et ve temizle
+    non_numeric_cols = X_train.select_dtypes(exclude=['number']).columns
+    if len(non_numeric_cols) > 0:
+        print(f"Uyarı: Sayısal olmayan veri sütunları bulundu: {non_numeric_cols}")
+        print("Bu sütunlar özellik setinden çıkarılıyor...")
+        X_train = X_train.drop(columns=non_numeric_cols)
+        X_validation = X_validation.drop(columns=non_numeric_cols)
+        X_test = X_test.drop(columns=non_numeric_cols)
 
     # One-hot encode labels
     le = LabelEncoder()
     le.fit(sdss_df['class'])
     encoded_Y = le.transform(sdss_df['class'])
     onehot_labels = to_categorical(encoded_Y)
+    
+    # Sınıf dağılımını göster
+    print("Sınıf dağılımı:")
+    for i, cls in enumerate(le.classes_):
+        count = (sdss_df['class'] == cls).sum()
+        print(f"  {cls}: {count} örnek ({count/len(sdss_df)*100:.2f}%)")
 
     y_train = onehot_labels[:train_count]
     y_validation = onehot_labels[train_count:train_count+val_count]
-    y_test = onehot_labels[-test_count:]
-
+    y_test = onehot_labels[-test_count:]    # NaN ve sonsuzluk kontrolü
+    print("\nÖlçeklendirmeden önce veri kontrol ediliyor...")
+    for df_name, df in zip(["X_train", "X_validation", "X_test"], [X_train, X_validation, X_test]):
+        nan_count = df.isna().sum().sum()
+        inf_count = ((df == np.inf) | (df == -np.inf)).sum().sum()
+        if nan_count > 0 or inf_count > 0:
+            print(f"  {df_name}: {nan_count} NaN değer, {inf_count} sonsuz değer")
+            # NaN ve sonsuzlukları medyan ile değiştir
+            df.replace([np.inf, -np.inf], np.nan, inplace=True)
+            medians = df.median()
+            df.fillna(medians, inplace=True)
+    
     # Scale features (fit on train only)
+    print("\nVeri ölçeklendiriliyor...")
     scaler = StandardScaler()
     scaler.fit(X_train)    
     X_train = pd.DataFrame(scaler.transform(X_train), columns=X_train.columns)
     X_validation = pd.DataFrame(scaler.transform(X_validation), columns=X_validation.columns)
     X_test = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
+    
+    print(f"\nÖzellik vektörü boyutu: {X_train.shape[1]} özellik")
+    print(f"İlk 5 özellik: {X_train.columns[:5].tolist()}")
+    print(f"Son 5 özellik: {X_train.columns[-5:].tolist() if len(X_train.columns) >= 5 else X_train.columns.tolist()}")
 
     return X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df, scaler
 
