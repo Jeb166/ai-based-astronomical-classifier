@@ -222,14 +222,26 @@ if rf is not None and scaler is not None:
                     with st.spinner("SDSS görüntüsü alınıyor..."):
                         image = get_sdss_image(closest_obj['ra'], closest_obj['dec'])
                         if image:
-                            st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)
+                            st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)                    
+                            with st.spinner("Sınıflandırma yapılıyor..."):
+                                # CSV bölümünde kullanılan aynı sınıflandırma yöntemini kullan
+                                X_scaled, _ = preprocess_data(sample, scaler, debug=False)
 
-                    with st.spinner("Sınıflandırma yapılıyor..."):
-                        pred_class, confidence, class_probs = predict(sample, rf, scaler, labels)
-
-                        st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
-                        st.markdown(f"**Güven Değeri:** {confidence:.4f}")
-                        st.markdown(get_object_info_text(pred_class, confidence))
+                                if X_scaled is None:
+                                    st.error("Veri ön işleme başarısız oldu.")
+                                else:
+                                    # Model ile tahmin
+                                    rf_probs = rf.predict_proba(X_scaled)
+                                    pred_classes_idx = rf_probs.argmax(1)
+                                    pred_class = labels[pred_classes_idx[0]]
+                                    confidence = rf_probs[0, pred_classes_idx[0]]
+                            
+                            # Tüm sınıf olasılıklarını hazırla
+                            class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
+                            
+                            st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
+                            st.markdown(f"**Güven Değeri:** {confidence:.4f}")
+                            st.markdown(get_object_info_text(pred_class, confidence))
 
                         col1, col2 = st.columns(2)
                         with col1:
