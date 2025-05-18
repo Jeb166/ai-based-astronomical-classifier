@@ -132,18 +132,145 @@ def query_nearest_obj(ra, dec, radius=0.01):
         
     Returns:
         pandas.DataFrame: Bulunan gök cisimlerinin verileri
-    """
-    url = (f"https://skyserver.sdss.org/dr18/SkyServerWS/SearchTools"
-           f"/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json")
-    try:
-        response = requests.get(url, timeout=30)
-        if response.status_code == 200:
-            js = response.json()
-            return pd.DataFrame(js)  # objId, u,g,r,i,z vs. içeren DataFrame
-        return None
-    except Exception as e:
-        st.error(f"SDSS radial arama hatası: {str(e)}")
-        return None
+    """    # Farklı SDSS DR API URL'lerini deneyelim - HTTP 500 hatası durumunda alternatif API'ler kullanılacak
+    urls = [
+        # DR18 en son sürüm (navigasyon sayfasından)
+        f"https://skyserver.sdss.org/dr18/SkyServer/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
+        
+        # DR17 ve DR16 yedek sürümler
+        f"https://skyserver.sdss.org/dr17/SkyServer/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
+        f"https://skyserver.sdss.org/dr16/SkyServer/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
+        
+        # Web servisi API'leri
+        f"http://skyserver.sdss.org/dr16/SkyServerWS/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
+        f"http://skyserver.sdss.org/dr17/SkyServerWS/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
+        f"http://skyserver.sdss.org/dr18/SkyServerWS/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
+        
+        # Alternatif API uçnoktaları
+        f"https://skyserver.sdss.org/dr16/SkyServer/Search/RadialSearch?format=json&ra={ra}&dec={dec}&radius={radius}",
+        f"https://skyserver.sdss.org/dr17/SkyServer/Search/RadialSearch?format=json&ra={ra}&dec={dec}&radius={radius}",
+        f"https://skyserver.sdss.org/dr18/SkyServer/Search/RadialSearch?format=json&ra={ra}&dec={dec}&radius={radius}",
+        
+        # CasJobs SQL sorguları
+        f"http://skyserver.sdss.org/CasJobs/RestApi/contexts/default/query?query=SELECT+TOP+10+*+FROM+PhotoObj+WHERE+CONTAINS(POINT('J2000',ra,dec),CIRCLE('J2000',{ra},{dec},{radius}))+ORDER+BY+distance&format=json"
+    ]    # User-Agent ekleyerek istek başlıklarını hazırla
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json, text/javascript, */*',
+        'Origin': 'https://skyserver.sdss.org',
+        'Referer': 'https://skyserver.sdss.org/navigate/'
+    }
+    
+    last_error = None
+    
+    # Tüm API URL'lerini sırayla deneyelim
+    for url in urls:
+        # Debug için URL'yi yazdır
+        print(f"SDSS API URL deneniyor: {url}")
+        
+        try:
+            # Daha uzun bir timeout süresi ile isteği gönder
+            response = requests.get(url, headers=headers, timeout=60)
+            
+            if response.status_code == 200:
+                # Yanıtı göster ve debug
+                content_type = response.headers.get('content-type', '')
+                print(f"API yanıt content-type: {content_type}")
+                
+                try:
+                    js = response.json()
+                    
+                    # Yanıt yapısını debug için yazdır
+                    print(f"API yanıt yapısı: {type(js)}")
+                    if isinstance(js, dict):
+                        print(f"API yanıt anahtarları: {js.keys()}")
+                    
+                    # API yanıtı başarılı ancak veri boş olabilir
+                    if js is None or (isinstance(js, list) and len(js) == 0) or (isinstance(js, dict) and len(js) == 0):
+                        print(f"Bu URL için veri bulunamadı: {url}")
+                        continue
+                    
+                    # API yanıt formatını kontrol et
+                    if isinstance(js, dict) and "error" in js:
+                        print(f"SDSS API hatası: {js['error']}")
+                        continue
+                    
+                    # Yanıtta 'Exception' anahtarı olması durumu
+                    if isinstance(js, dict) and "Exception" in js:
+                        print(f"SDSS API Exception: {js['Exception']}")
+                        continue
+                        
+                    # Farklı yanıt formatları için kontrol
+                    if isinstance(js, dict):
+                        # Data anahtarına sahip yanıt formatı
+                        if "Rows" in js:
+                            objects = js["Rows"]
+                            if len(objects) > 0:
+                                print(f"API başarılı sonuç döndü: {len(objects)} nesne bulundu")
+                                return pd.DataFrame(objects)
+                            else:
+                                print("API yanıtında Rows anahtarı var ancak içi boş.")
+                                continue
+                        elif "data" in js:
+                            objects = js["data"]
+                            if len(objects) > 0:
+                                print(f"API başarılı sonuç döndü: {len(objects)} nesne bulundu")
+                                return pd.DataFrame(objects)
+                            else:
+                                print("API yanıtında data anahtarı var ancak içi boş.")
+                                continue
+                        elif "Column1" in js:
+                            # Bazı eski SDSS API versiyonları Column1, Column2... şeklinde döner
+                            print("API Column1 formatında yanıt döndü")
+                            return pd.DataFrame([js])
+                        else:
+                            # Anahtarları doğrudan sütun olarak kullan
+                            print("API farklı bir formatta yanıt döndü, doğrudan anahtarlar kullanılıyor")
+                            return pd.DataFrame([js])
+                    elif isinstance(js, list):
+                        # Doğrudan liste formatı
+                        if len(js) > 0:
+                            print(f"API başarılı liste yanıtı döndü: {len(js)} nesne")
+                            return pd.DataFrame(js)
+                        else:
+                            print("API yanıtı boş liste içeriyor.")
+                            continue
+                    else:
+                        print(f"API'dan beklenmeyen veri formatı alındı: {type(js)}")
+                        continue
+                except ValueError as json_err:
+                    # JSON parse hatası durumunda ham yanıtı incele ve devam et
+                    resp_text = response.text[:1000]  # İlk 1000 karakter
+                    print(f"API yanıtı JSON olarak ayrıştırılamadı: {json_err}. Ham yanıt: {resp_text}...")
+                    last_error = json_err
+                    continue
+            else:
+                # HTTP hata kodunda bir sonraki API URL'yi dene
+                print(f"API HTTP hata kodu: {response.status_code}")
+                try:
+                    error_content = response.text[:500]  # İlk 500 karakter
+                    print(f"Hata yanıtı: {error_content}")
+                except:
+                    print("Hata yanıtı okunamadı")
+                
+                last_error = f"HTTP {response.status_code}"
+                continue
+                
+        except Exception as e:            # İstek hatası, bir sonraki URL'yi dene
+            print(f"API istek hatası: {str(e)}")
+            last_error = e
+            continue
+    
+    # Tüm URL'ler denendikten sonra hala başarısızsa, hata döndür
+    error_msg = f"Tüm SDSS API URL'leri başarısız oldu. Son hata: {str(last_error) if last_error else 'Bilinmeyen hata'}"
+    st.error(error_msg)
+    print(error_msg)
+    
+    # Kullanıcıya arama yarıçapını artırmasını öner
+    if radius < 0.05:
+        st.info(f"İpucu: Arama yarıçapını artırmayı deneyin (şu anki yarıçap: {radius} derece). Daha büyük bir arama alanında daha fazla gök cismi bulunabilir.")
+    
+    return None
 
 # UI başlığı ve açıklaması
 st.set_page_config(
@@ -182,17 +309,29 @@ if rf is not None and scaler is not None:
     # Koordinat ile arama
     # ---------------------------------------------------------
     if input_method == "Koordinat ile Arama":
-        st.subheader("Koordinat ile Gök Cismi Ara")
-
-        st.markdown("### Gökyüzü Haritası (Aladin Lite)")
-        st.markdown("Haritada gezinin, ardından koordinatları manuel girin.")
-
-        aladin_iframe = """
-        <iframe src="https://aladin.u-strasbg.fr/AladinLite/?target=180+0&fov=0.2&survey=P/SDSS9/color"
-                width="100%" height="500" style="border:1px solid #ccc; border-radius:5px;"></iframe>
+        st.subheader("Koordinat ile Gök Cismi Ara")        
+        st.markdown("### SDSS DR18 Navigasyon Aracı")
+        st.markdown("SDSS'in orijinal navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")
+        
+        sdss_iframe = """
+        <iframe id="naviframe" scrolling="no" allow="clipboard-write" 
+                style="width: 100%; overflow: hidden; border:1px solid #ccc; border-radius:5px;" 
+                height="550" 
+                src="https://skyserver.sdss.org/navigate/?ra=180&dec=0&scale=0.3&dr=18&opt=&embedded=true"></iframe>
+        <script>
+        // Koordinatları ana sayfaya göndermek için mesaj dinleyicisi ekleyelim
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'coordinates') {
+                // Streamlit'e özel mesaj gönderme mekanizması
+                window.parent.postMessage({
+                    type: 'streamlit:setComponentValue',
+                    value: event.data.coordinates
+                }, '*');
+            }
+        });
+        </script>
         """
-        components.html(aladin_iframe, height=520)
-
+        components.html(sdss_iframe, height=570)        
         st.info("İpucu: Haritada RA ve Dec koordinatlarını öğrenmek için mouse ile bir noktaya tıkladıktan sonra sağ üstte görünen koordinat bilgilerini kullanabilirsiniz. Koordinat sistemini sol üstte **ICRSd** olarak ayarlayın.")
 
         col1, col2 = st.columns(2)
@@ -201,60 +340,127 @@ if rf is not None and scaler is not None:
         with col2:
             dec = st.number_input("Dik Açıklık (Dec)", min_value=-90.0, max_value=90.0, value=0.0, format="%.6f")
 
-        search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")    
+        search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")        
         if st.button("Ara ve Sınıflandır", key="search_coords_fixed"):
             with st.spinner("SDSS'ten en yakın gök cismi aranıyor..."):
                 results_df = query_nearest_obj(ra, dec, search_radius)
 
-        if results_df is not None and not results_df.empty:
-            st.success(f"{len(results_df)} gök cismi bulundu.")
-            st.dataframe(results_df)
+            if results_df is not None and not results_df.empty:
+                st.success(f"{len(results_df)} gök cismi bulundu.")
+                
+                # Veri önizlemesi - ilk 10 satır
+                with st.expander("Bulunan gök cisimlerinin verileri", expanded=True):
+                    st.dataframe(results_df.head(10))
 
-            closest_obj = results_df.iloc[0]
-            objid = closest_obj.get('objID') or closest_obj.get('objid')
-
-            with st.spinner("Detaylı SDSS verisi alınıyor..."):
-                detailed = get_sdss_object_by_coords(objid)
-
-            if detailed:
-                try:
-                    u, g, r, i_, z = map(float, [detailed["u"], detailed["g"], detailed["r"], detailed["i"], detailed["z"]])
-                    sample = make_feature_vector(u, g, r, i_, z)
-
-                    with st.spinner("SDSS görüntüsü alınıyor..."):
+                # En yakın cismi seç
+                closest_obj = results_df.iloc[0]
+                
+                # objID veya objid (büyük/küçük harf farklılıkları olabilir)
+                objid = closest_obj.get('objID') or closest_obj.get('objid')
+                
+                if objid:
+                    st.info(f"En yakın gök cismi: ID = {objid}")
+                      # SDSS nesnesinden detaylı bilgileri al
+                    with st.spinner("Detaylı SDSS verisi alınıyor..."):
+                        detailed = get_sdss_object_by_coords(closest_obj['ra'], closest_obj['dec'])
+                    
+                    # Görüntü alma
+                    st.markdown("### SDSS Görüntüsü")
+                    with st.spinner("Görüntü alınıyor..."):
                         image = get_sdss_image(closest_obj['ra'], closest_obj['dec'])
                         if image:
-                            st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)                    
+                            st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)
+                        else:
+                            st.warning("SDSS görüntüsü alınamadı")
+
+                    # Detaylı bilgi varsa sınıflandır
+                    if detailed is not None:
+                        try:
+                            st.markdown("### Fotometrik Veriler")
+                            col1, col2, col3, col4, col5 = st.columns(5)
+                            
+                            # u, g, r, i, z değerleri
+                            u = float(detailed["u"]) if "u" in detailed.colnames else float(closest_obj.get('u', 0))
+                            g = float(detailed["g"]) if "g" in detailed.colnames else float(closest_obj.get('g', 0))
+                            r = float(detailed["r"]) if "r" in detailed.colnames else float(closest_obj.get('r', 0))
+                            i_ = float(detailed["i"]) if "i" in detailed.colnames else float(closest_obj.get('i', 0))
+                            z = float(detailed["z"]) if "z" in detailed.colnames else float(closest_obj.get('z', 0))
+                            
+                            # Değerleri göster
+                            with col1:
+                                st.metric(label="u filtresi", value=f"{u:.3f}")
+                            with col2:
+                                st.metric(label="g filtresi", value=f"{g:.3f}")
+                            with col3:
+                                st.metric(label="r filtresi", value=f"{r:.3f}")
+                            with col4:
+                                st.metric(label="i filtresi", value=f"{i_:.3f}")
+                            with col5:
+                                st.metric(label="z filtresi", value=f"{z:.3f}")
+                            
+                            # Spektral veriler
+                            plate = detailed["plate"] if "plate" in detailed.colnames else closest_obj.get('plate', 0)
+                            mjd = detailed["mjd"] if "mjd" in detailed.colnames else closest_obj.get('mjd', 0)
+                            fiberid = detailed["fiberid"] if "fiberid" in detailed.colnames else closest_obj.get('fiberid', 0)
+                            redshift = detailed["z"] if "z" in detailed.colnames else closest_obj.get('redshift', 0)
+                            
+                            if plate and mjd and fiberid:
+                                st.markdown("### Spektral Veriler")
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.metric(label="Plate ID", value=plate)
+                                with col2:
+                                    st.metric(label="MJD", value=mjd)
+                                with col3:
+                                    st.metric(label="Fiber ID", value=fiberid)
+                                with col4:
+                                    st.metric(label="Redshift", value=f"{redshift:.6f}" if redshift else "N/A")
+                                
+                                # Spektrum bağlantısı
+                                spec_obj = {'plate': plate, 'mjd': mjd, 'fiberid': fiberid}
+                                spec_link = get_spectra_link(spec_obj)
+                                if spec_link:
+                                    st.markdown(f"[SDSS Spektrum Görüntüleyicide Aç]({spec_link})")
+                            
+                            # Özellik vektörü oluştur
+                            sample = make_feature_vector(u, g, r, i_, z, 
+                                                        plate=plate, 
+                                                        mjd=mjd, 
+                                                        fiberid=fiberid, 
+                                                        redshift=redshift)
+                            
+                            # Sınıflandırma yap
+                            st.markdown("### Sınıflandırma Sonucu")
                             with st.spinner("Sınıflandırma yapılıyor..."):
-                                # CSV bölümünde kullanılan aynı sınıflandırma yöntemini kullan
-                                X_scaled, _ = preprocess_data(sample, scaler, debug=False)
-
-                                if X_scaled is None:
-                                    st.error("Veri ön işleme başarısız oldu.")
+                                # Özellik vektörünü hazırla (scaler öncesi)
+                                X, _ = preprocess_data(sample, scaler, debug=False)
+                                if X is not None:
+                                    # Tahmin yap
+                                    pred_class, confidence, class_probs = predict(X, rf, scaler, labels)
+                                    
+                                    # Sonuçları göster
+                                    st.subheader(f"Tahmin Edilen Sınıf: {pred_class}")
+                                    st.markdown(f"**Güven Değeri:** {confidence:.4f}")
+                                    
+                                    # Görselleştirme
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.pyplot(plot_predictions(pred_class, class_probs))
+                                    with col2:
+                                        st.pyplot(display_confidence_gauge(confidence))
+                                    
+                                    # Açıklayıcı bilgi
+                                    st.info(get_object_info_text(pred_class, confidence))
                                 else:
-                                    # Model ile tahmin
-                                    rf_probs = rf.predict_proba(X_scaled)
-                                    pred_classes_idx = rf_probs.argmax(1)
-                                    pred_class = labels[pred_classes_idx[0]]
-                                    confidence = rf_probs[0, pred_classes_idx[0]]
-                            
-                            # Tüm sınıf olasılıklarını hazırla
-                            class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
-                            
-                            st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
-                            st.markdown(f"**Güven Değeri:** {confidence:.4f}")
-                            st.markdown(get_object_info_text(pred_class, confidence))
-
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.pyplot(plot_predictions(pred_class, class_probs))
-                        with col2:
-                            st.pyplot(display_confidence_gauge(confidence))
-
-                except Exception as e:
-                    st.error(f"Fotometrik veriler alınamadı veya dönüştürülemedi: {str(e)}")
-            else:
-                st.error("SDSS objesi bulundu ama detaylı veriler alınamadı. Belki taranmamış olabilir.")
+                                    st.error("Veri ön işleme başarısız oldu.")
+                                
+                        except Exception as e:
+                            st.error(f"Sınıflandırma sırasında hata oluştu: {str(e)}")
+                    else:
+                        st.warning("SDSS objesi bulundu ama detaylı veriler alınamadı. Spektral verileri olmayan bir obje olabilir.")
+                else:
+                    st.error("Bulunan gök cisminde objID bilgisi bulunmuyor.")
+            else:                st.warning("Bu koordinatlarda SDSS verisi bulunamadı. Yarıçapı artırmayı veya başka bir bölgeyi deneyin.")
         else:
             st.warning("Bu koordinatlarda SDSS verisi bulunamadı. Yarıçapı artırmayı veya başka bir bölgeyi deneyin.")
 

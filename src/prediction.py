@@ -153,14 +153,71 @@ def get_spectra_link(obj_id):
 def get_sdss_object_by_coords(ra, dec, radius=5.0):
     """SDSS'ten verilen koordinatlar için nesne bilgilerini çeker"""
     try:
-        coords = SkyCoord(ra=ra*u.degree, dec=dec*u.degree, frame='icrs')
-        results = SDSS.query_region(coords, radius=radius*u.arcsec, spectro=True)
+        # Eğer ra/dec bir sözlükten geldiyse ve objID yerine string olarak bir koordinat ise
+        if isinstance(ra, str) and isinstance(dec, str):
+            try:
+                ra = float(ra)
+                dec = float(dec)
+            except ValueError:
+                print(f"Koordinat değerleri sayıya dönüştürülemedi: ra={ra}, dec={dec}")
+                return None
         
-        if results is None or len(results) == 0:
+        # Eğer ra bir objID ise, SDSS API ile o ID'yi sorgula
+        if isinstance(ra, (int, str)) and not isinstance(ra, float):
+            try:
+                objid = int(ra) if isinstance(ra, str) else ra
+                results = SDSS.query_region(f"objid={objid}")
+                if results is not None and len(results) > 0:
+                    return results[0]
+                else:
+                    print(f"objID={objid} için nesne bulunamadı")
+                    return None
+            except Exception as e:
+                print(f"objID sorgusu sırasında hata: {str(e)}")
+                return None
+        
+        try:
+            # Önce normal koordinat sorgusu deneyelim
+            coords = SkyCoord(ra=ra*u.degree, dec=dec*u.degree, frame='icrs')
+            results = SDSS.query_region(coords, radius=radius*u.arcsec, spectro=True)
+            
+            if results is not None and len(results) > 0:
+                return results[0]
+                
+            # Alternatif olarak HTTP API'yi doğrudan çağıralım
+            print("Astroquery başarısız, HTTP API ile deneniyor...")
+            
+            # Manuel API çağrısı yapalım
+            api_urls = [
+                f"https://skyserver.sdss.org/dr16/SkyServer/ImagingQuery/Query?format=json&cmd=select+top+1+*+from+PhotoObj+where+ra+between+{ra-0.05}+and+{ra+0.05}+and+dec+between+{dec-0.05}+and+{dec+0.05}+order+by+sqrt(power(ra-{ra},2)+power(dec-{dec},2))",
+                f"https://skyserver.sdss.org/dr17/SkyServer/ImagingQuery/Query?format=json&cmd=select+top+1+*+from+PhotoObj+where+ra+between+{ra-0.05}+and+{ra+0.05}+and+dec+between+{dec-0.05}+and+{dec+0.05}+order+by+sqrt(power(ra-{ra},2)+power(dec-{dec},2))"
+            ]
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/json'
+            }
+            
+            for url in api_urls:
+                try:
+                    response = requests.get(url, headers=headers, timeout=30)
+                    if response.status_code == 200:
+                        json_data = response.json()
+                        if isinstance(json_data, dict) and 'Rows' in json_data and len(json_data['Rows']) > 0:
+                            # Manuel API'den gelen veriyi astropy.table.Table formatına dönüştür
+                            from astropy.table import Table
+                            return Table(json_data['Rows'][0])
+                except Exception as api_err:
+                    print(f"Manuel API çağrısı başarısız: {str(api_err)}")
+                    continue
+            
+            print(f"Koordinatlarda nesne bulunamadı: ra={ra}, dec={dec}, radius={radius}")
             return None
-        
-        # İlk eşleşmeyi al
-        return results[0]
+            
+        except Exception as astro_err:
+            print(f"Astroquery hatası: {str(astro_err)}")
+            return None
+            
     except Exception as e:
         print(f"SDSS veri çekilirken hata: {str(e)}")
         return None
@@ -168,14 +225,79 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
 def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
     """SDSS'ten verilen koordinatlar için gökyüzü görüntüsünü çeker"""
     try:
-        image_url = f"http://skyserver.sdss.org/dr16/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}"
-        response = requests.get(image_url)
+        # Farklı API URL'lerini dene
+        urls = [
+            # DR18 navigasyon aracı görüntü URLs (en güvenilir)
+            f"https://skyserver.sdss.org/dr18/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            
+            # Diğer DR sürümleri için görüntü uçnoktaları
+            f"http://skyserver.sdss.org/dr17/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            f"http://skyserver.sdss.org/dr16/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            
+            # Güvenli bağlantı (HTTPS) uçnoktaları
+            f"https://skyserver.sdss.org/dr17/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            f"https://skyserver.sdss.org/dr16/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            
+            # Navigasyon görüntü araçları
+            f"https://skyserver.sdss.org/dr18/en/tools/chart/navi.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
+            f"https://skyserver.sdss.org/dr17/en/tools/chart/navi.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
+            
+            # Alternatif servisler
+            f"http://skyservice.pha.jhu.edu/DR16/ImgCutout/getjpeg.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            f"http://skyservice.pha.jhu.edu/DR17/ImgCutout/getjpeg.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            
+            # Web servis API'leri
+            f"https://dr18.sdss.org/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            f"https://dr17.sdss.org/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            f"https://dr16.sdss.org/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
+            
+            # GetImage API'si
+            f"https://skyserver.sdss.org/dr18/SkyServer/GetImage/getImage?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
+            f"https://skyserver.sdss.org/dr17/SkyServer/GetImage/getImage?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
+            f"https://skyserver.sdss.org/dr16/SkyServer/GetImage/getImage?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt="
+        ]        # User-Agent ekleyerek istek başlıklarını hazırla
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'image/jpeg, image/png, image/*',
+            'Origin': 'https://skyserver.sdss.org',  
+            'Referer': 'https://skyserver.sdss.org/navigate/'
+        }
         
-        if response.status_code == 200:
-            return Image.open(BytesIO(response.content))
-        else:
-            print(f"Görüntü çekilemedi: HTTP {response.status_code}")
-            return None
+        for url in urls:
+            print(f"Görüntü URL'si deneniyor: {url}")
+            
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                
+                if response.status_code == 200 and response.content:
+                    # Content-Type kontrol et
+                    content_type = response.headers.get('Content-Type', '')
+                    print(f"Görüntü yanıt content-type: {content_type}")
+                    
+                    if 'image' in content_type:
+                        print(f"Başarılı görüntü elde edildi: {len(response.content)} bayt")
+                        return Image.open(BytesIO(response.content))
+                    elif 'text/html' in content_type:
+                        # HTML döndüyse ve içinde bir resim etiketi varsa, o resmi çekmeyi dene
+                        print("HTML içeriği döndü, resim etiketi aranıyor...")
+                        if b'<img' in response.content:
+                            print("HTML içinde resim etiketi bulundu, doğrudan görseli çekmeye çalışılacak")
+                            continue
+                        else:
+                            print("HTML içinde resim etiketi bulunamadı")
+                            continue
+                    else:
+                        print(f"İçerik resim değil: {content_type}")
+                        continue
+                else:
+                    print(f"Görüntü çekilemedi: HTTP {response.status_code}")
+                    continue
+            except Exception as e:
+                print(f"URL isteği hatası: {str(e)}")
+                continue
+        
+        print("Tüm görüntü URL'leri başarısız oldu")
+        return None
     except Exception as e:
         print(f"Görüntü çekilirken hata: {str(e)}")
         return None
