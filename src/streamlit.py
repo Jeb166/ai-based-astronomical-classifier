@@ -296,7 +296,7 @@ st.sidebar.markdown("SDSS veri tabanını kullanarak gök cismi sınıflandırma
 # Giriş metodu seçimi
 input_method = st.sidebar.radio(
     "Giriş metodu seçin:",
-    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme"]
+    ["Gökyüzü Haritası ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme"]
 )
 
 # Modeli yükle
@@ -308,10 +308,10 @@ if rf is not None and scaler is not None:
       # ---------------------------------------------------------
     # Koordinat ile arama
     # ---------------------------------------------------------
-    if input_method == "Koordinat ile Arama":
+    if input_method == "Gökyüzü Haritası ile Arama":
         
-        st.subheader("Koordinat ile Gök Cismi Ara")        
-        st.markdown("### SDSS DR18 Navigasyon Aracı")
+        st.subheader("Gökyüzü Haritası ile Gök Cismi Ara")        
+        st.markdown("##### SDSS DR18 Navigasyon Aracı")
         st.markdown("SDSS'in Aladin Sky Atlas kullanan navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")          
         sdss_iframe = """
         <iframe id="naviframe" scrolling="yes" allow="clipboard-write" 
@@ -325,12 +325,54 @@ if rf is not None and scaler is not None:
 
         with tab1:
             st.markdown("### ObjID ile Gök Cismi Ara")
-            objid_input = st.text_input("SDSS Nesne ID (objID)", placeholder="ObjID girin...")
+            objid_input = st.text_input("SDSS Nesne ID (objID)", placeholder="Örnek: 1237668296598749280")
 
-            if st.button("ObjID ile Ara ve Sınıflandır"):
-                if objid_input:
-                    st.info(f"ObjID ile arama yapılıyor: {objid_input}")
-                    # ObjID ile arama işlemleri burada yapılabilir
+            if st.button("ObjID ile Ara ve Sınıflandır", key="objid_search"):
+                if not objid_input.strip():
+                    st.warning("Lütfen bir ObjID girin.")
+                    st.stop()
+
+                with st.spinner("SDSS’ten veri çekiliyor..."):
+                    try:
+                        row = None
+                        for dr in (18, 17, 16):                         # ← SON DÖNGÜ BURADA
+                            try:
+                                row = get_sdss_object_by_objid(objid_input.strip(), dr=dr)
+                                if row:                                 # Başarılıysa döngüden çık
+                                    break
+                            except Exception as e:
+                                print(f"DR{dr} denemesi hata verdi: {e}")
+                    except Exception as e:
+                        st.error(f"SDSS servisine bağlanılamadı: {e}")
+                        st.stop()
+
+                if row is None:
+                    st.error("Bu ObjID için kayıt bulunamadı.")
+                    st.stop()
+
+                # Foto-metrik değerleri feature-vectöre çevir
+                fv = make_feature_vector(
+                    row["u"], row["g"], row["r"], row["i"], row["z"],
+                    plate=row["plate"], mjd=row["mjd"],
+                    fiberid=row["fiberid"], redshift=row.get("redshift", 0)
+                )
+
+                # Ölçekle + tahmin et
+                X_scaled, _ = preprocess_data(fv, scaler)
+                pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
+
+                # === Sonuçları göster ===
+                st.success(f"Tahmin: **{pred_class}**  —  Güven: **{confidence:.3f}**")
+                st.markdown(get_object_info_text(pred_class, confidence))
+
+                col1, col2 = st.columns(2)
+                col1.pyplot(plot_predictions(pred_class, class_probs))
+                col2.pyplot(display_confidence_gauge(confidence))
+
+                # İsteğe bağlı: gökyüzü görüntüsü
+                img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
+                if img:
+                    st.image(img, caption="SDSS kesiti")
                 else:
                     st.warning("Lütfen bir ObjID girin.")
 

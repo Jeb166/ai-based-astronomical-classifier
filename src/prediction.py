@@ -222,6 +222,39 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
         print(f"SDSS veri çekilirken hata: {str(e)}")
         return None
 
+def get_sdss_object_by_objid(objid, dr=18):
+    """
+    Tek bir objID için u,g,r,i,z + plate,mjd,fiberid,redshift alanlarını çeker.
+    API’nin liste, sözlük‐“Rows” veya “data” formatlarını da kabul eder.
+    """
+    import urllib.parse as ul, requests, json
+
+    sql = (
+        "SELECT TOP 1 ra,dec,u,g,r,i,z,"
+        "plate,mjd,fiberid,redshift "
+        f"FROM PhotoObjAll WHERE objid = {objid}"
+    )
+    url = (
+        f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/"
+        f"SearchTools/SqlSearch?format=json&cmd={ul.quote(sql)}"
+    )
+
+    r = requests.get(url, headers={"User-Agent": "sdss-fetcher"}, timeout=15)
+    r.raise_for_status()
+    js = r.json()
+
+    # --- 3 olası yapı ---
+    if isinstance(js, dict):
+        if js.get("Rows"):                    # { "Rows": [ {...} ] }
+            return js["Rows"][0]
+        if js.get("data"):                    # { "data": [ {...} ] }
+            return js["data"][0]
+    elif isinstance(js, list) and js:         # [ {...} ]
+        return js[0]
+
+    print("DEBUG-js-empty:", json.dumps(js)[:300])
+    return None
+
 def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
     """SDSS'ten verilen koordinatlar için gökyüzü görüntüsünü çeker"""
     try:
