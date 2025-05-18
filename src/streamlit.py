@@ -15,6 +15,8 @@ import urllib.parse as ul
 import requests
 import os
 import time
+from streamlit.components.v1 import html
+from streamlit_js_eval import streamlit_js_eval
 
 # Model işlevlerini ve tahmin işlevlerini içe aktar
 from prediction import (
@@ -132,7 +134,7 @@ def query_nearest_obj(ra, dec, radius=0.01):
         
     Returns:
         pandas.DataFrame: Bulunan gök cisimlerinin verileri
-    """    # Farklı SDSS DR API URL'lerini deneyelim - HTTP 500 hatası durumunda alternatif API'ler kullanılacak
+    """    # Farklı SDSS DR API'lerini deneyelim - HTTP 500 hatası durumunda alternatif API'ler kullanılacak
     urls = [
         # DR18 en son sürüm (navigasyon sayfasından)
         f"https://skyserver.sdss.org/dr18/SkyServer/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
@@ -296,7 +298,7 @@ st.sidebar.markdown("SDSS veri tabanını kullanarak gök cismi sınıflandırma
 # Giriş metodu seçimi
 input_method = st.sidebar.radio(
     "Giriş metodu seçin:",
-    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme", "Örnek Veriler"]
+    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme", "Örnek Veriler", "ObjID ile Arama"]
 )
 
 # Modeli yükle
@@ -309,162 +311,70 @@ if rf is not None and scaler is not None:
     # Koordinat ile arama
     # ---------------------------------------------------------
     if input_method == "Koordinat ile Arama":
-        st.subheader("Koordinat ile Gök Cismi Ara")        
-        st.markdown("### SDSS DR18 Navigasyon Aracı")
-        st.markdown("SDSS'in orijinal navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")
         
-        sdss_iframe = """
-        <iframe id="naviframe" scrolling="no" allow="clipboard-write" 
-                style="width: 100%; overflow: hidden; border:1px solid #ccc; border-radius:5px; background-color: #fff;" 
-                height="550" 
-                src="https://skyserver.sdss.org/navigate/?ra=180&dec=0&scale=0.3&dr=18&opt=&embedded=true"></iframe>
-        <script>
-        // Koordinatları ana sayfaya göndermek için mesaj dinleyicisi ekleyelim
-        window.addEventListener('message', function(event) {
-            if (event.data && event.data.type === 'coordinates') {
-                // Streamlit'e özel mesaj gönderme mekanizması
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    value: event.data.coordinates
-                }, '*');
-            }
-        });
-        </script>
-        """
-        components.html(sdss_iframe, height=570)
-        st.info("İpucu: Haritada RA ve Dec koordinatlarını öğrenmek için mouse ile bir noktaya tıkladıktan sonra sağ üstte görünen koordinat bilgilerini kullanabilirsiniz. Koordinat sistemini sol üstte **ICRSd** olarak ayarlayın.")
+        st.subheader("Koordinat ile Gök Cismi Ara")
+        st.markdown("### Aladin Lite ile Koordinat Seçimi")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            ra = st.number_input("Sağ Açıklık (RA)", min_value=0.0, max_value=360.0, value=180.0, format="%.6f")
-        with col2:
-            dec = st.number_input("Dik Açıklık (Dec)", min_value=-90.0, max_value=90.0, value=0.0, format="%.6f")
+        # Aladin Lite entegrasyonu
+        coords = st.text_input("RA ve Dec koordinatlarını girin (örnek: 180.0, 0.0):", "")
 
-        search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")        
-        if st.button("Ara ve Sınıflandır", key="search_coords_fixed"):
-            with st.spinner("SDSS'ten en yakın gök cismi aranıyor..."):
-                results_df = query_nearest_obj(ra, dec, search_radius)
+        if coords:
+            try:
+                ra, dec = map(float, coords.split(","))
+                with st.spinner("SDSS veritabanından en yakın objeyi sorguluyor..."):
+                    from prediction import sdss_nearest_obj
+                    nearest_obj = sdss_nearest_obj(ra, dec)
 
-            if results_df is not None and not results_df.empty:
-                st.success(f"{len(results_df)} gök cismi bulundu.")
-                
-                # Veri önizlemesi - ilk 10 satır
-                with st.expander("Bulunan gök cisimlerinin verileri", expanded=True):
-                    st.dataframe(results_df.head(10))
-
-                # En yakın cismi seç
-                closest_obj = results_df.iloc[0]
-                
-                # objID veya objid (büyük/küçük harf farklılıkları olabilir)
-                objid = closest_obj.get('objID') or closest_obj.get('objid')
-                
-                if objid:
-                    st.info(f"En yakın gök cismi: ID = {objid}")
-                      # SDSS nesnesinden detaylı bilgileri al
-                    with st.spinner("Detaylı SDSS verisi alınıyor..."):
-                        detailed = get_sdss_object_by_coords(closest_obj['ra'], closest_obj['dec'])
-                    
-                    # Görüntü alma
-                    st.markdown("### SDSS Görüntüsü")
-                    with st.spinner("Görüntü alınıyor..."):
-                        image = get_sdss_image(closest_obj['ra'], closest_obj['dec'])
-                        if image:
-                            st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)
-                        else:
-                            st.warning("SDSS görüntüsü alınamadı")
-
-                    # Detaylı bilgi varsa sınıflandır
-                    if detailed is not None:
-                        try:
-                            st.markdown("### Fotometrik Veriler")
-                            col1, col2, col3, col4, col5 = st.columns(5)
-                            
-                            # u, g, r, i, z değerleri
-                            u = float(detailed["u"]) if "u" in detailed.colnames else float(closest_obj.get('u', 0))
-                            g = float(detailed["g"]) if "g" in detailed.colnames else float(closest_obj.get('g', 0))
-                            r = float(detailed["r"]) if "r" in detailed.colnames else float(closest_obj.get('r', 0))
-                            i_ = float(detailed["i"]) if "i" in detailed.colnames else float(closest_obj.get('i', 0))
-                            z = float(detailed["z"]) if "z" in detailed.colnames else float(closest_obj.get('z', 0))
-                            
-                            # Değerleri göster
-                            with col1:
-                                st.metric(label="u filtresi", value=f"{u:.3f}")
-                            with col2:
-                                st.metric(label="g filtresi", value=f"{g:.3f}")
-                            with col3:
-                                st.metric(label="r filtresi", value=f"{r:.3f}")
-                            with col4:
-                                st.metric(label="i filtresi", value=f"{i_:.3f}")
-                            with col5:
-                                st.metric(label="z filtresi", value=f"{z:.3f}")
-                            
-                            # Spektral veriler
-                            plate = detailed["plate"] if "plate" in detailed.colnames else closest_obj.get('plate', 0)
-                            mjd = detailed["mjd"] if "mjd" in detailed.colnames else closest_obj.get('mjd', 0)
-                            fiberid = detailed["fiberid"] if "fiberid" in detailed.colnames else closest_obj.get('fiberid', 0)
-                            redshift = detailed["z"] if "z" in detailed.colnames else closest_obj.get('redshift', 0)
-                            
-                            if plate and mjd and fiberid:
-                                st.markdown("### Spektral Veriler")
-                                col1, col2, col3, col4 = st.columns(4)
-                                with col1:
-                                    st.metric(label="Plate ID", value=plate)
-                                with col2:
-                                    st.metric(label="MJD", value=mjd)
-                                with col3:
-                                    st.metric(label="Fiber ID", value=fiberid)
-                                with col4:
-                                    st.metric(label="Redshift", value=f"{redshift:.6f}" if redshift else "N/A")
-                                
-                                # Spektrum bağlantısı
-                                spec_obj = {'plate': plate, 'mjd': mjd, 'fiberid': fiberid}
-                                spec_link = get_spectra_link(spec_obj)
-                                if spec_link:
-                                    st.markdown(f"[SDSS Spektrum Görüntüleyicide Aç]({spec_link})")
-                            
-                            # Özellik vektörü oluştur
-                            sample = make_feature_vector(u, g, r, i_, z, 
-                                                        plate=plate, 
-                                                        mjd=mjd, 
-                                                        fiberid=fiberid, 
-                                                        redshift=redshift)
-                            
-                            # Sınıflandırma yap
-                            st.markdown("### Sınıflandırma Sonucu")
-                            with st.spinner("Sınıflandırma yapılıyor..."):
-                                # Özellik vektörünü hazırla (scaler öncesi)
-                                X, _ = preprocess_data(sample, scaler, debug=False)
-                                if X is not None:
-                                    # Tahmin yap
-                                    pred_class, confidence, class_probs = predict(X, rf, scaler, labels)
-                                    
-                                    # Sonuçları göster
-                                    st.subheader(f"Tahmin Edilen Sınıf: {pred_class}")
-                                    st.markdown(f"**Güven Değeri:** {confidence:.4f}")
-                                    
-                                    # Görselleştirme
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.pyplot(plot_predictions(pred_class, class_probs))
-                                    with col2:
-                                        st.pyplot(display_confidence_gauge(confidence))
-                                    
-                                    # Açıklayıcı bilgi
-                                    st.info(get_object_info_text(pred_class, confidence))
-                                else:
-                                    st.error("Veri ön işleme başarısız oldu.")
-                                
-                        except Exception as e:
-                            st.error(f"Sınıflandırma sırasında hata oluştu: {str(e)}")
-                    else:
-                        st.warning("SDSS objesi bulundu ama detaylı veriler alınamadı. Spektral verileri olmayan bir obje olabilir.")
+                if nearest_obj is not None and not nearest_obj.empty:
+                    st.success("En yakın obje bulundu!")
+                    st.write(nearest_obj)
                 else:
-                    st.error("Bulunan gök cisminde objID bilgisi bulunmuyor.")
-            else:                st.warning("Bu koordinatlarda SDSS verisi bulunamadı. Yarıçapı artırmayı veya başka bir bölgeyi deneyin.")
-        else:
-            st.warning("Bu koordinatlarda SDSS verisi bulunamadı. Yarıçapı artırmayı veya başka bir bölgeyi deneyin.")
-
+                    st.warning("Belirtilen koordinatlara yakın bir obje bulunamadı.")
+            except ValueError:
+                st.error("Geçersiz koordinat formatı. Lütfen RA ve Dec değerlerini virgülle ayırarak girin.")
         
+            # --- A) Harita HTML-si --------------------------------------------------
+            aladin_html = """
+            <link  rel="stylesheet"
+                href="https://aladin.u-strasbg.fr/AladinLite/v3/latest/aladin.min.css"/>
+            <script src="https://aladin.u-strasbg.fr/AladinLite/v3/latest/aladin.min.js"></script>
+
+            <div id="aladin-div" style="width:100%; height:500px;"></div>
+
+            <script>
+            // 1 • Aladin Lite'ı başlat
+            const aladin = A.aladin('#aladin-div', {
+            survey: 'P/SDSS9/color',   // renkli SDSS çevirimi; HiPS'te DR18 henüz yok
+            fov: 1,                    // görüş alanı (derece)
+            cooFrame: 'ICRSd',         // on-click çıktı: derece
+            target: '0 +0'             // başlangıç merkezi (RA Dec)
+            });
+
+            // 2 • Kullanıcı kaynak seçince koord. al → Streamlit'e yolla
+            aladin.on('clickObject', obj => {
+            const msg = {type:'aladin_coords', ra:obj.data.ra, dec:obj.data.dec};
+            window.parent.postMessage(msg, '*');
+            });
+            </script>
+            """
+            html(aladin_html, height=530)
+
+            # --- B) Tarayıcıdan gelen koord. — tek seferlik dinle -------------------
+            js_promise = """
+            new Promise(resolve => {
+            window.addEventListener('message', e => {
+                if (e.data?.type === 'aladin_coords') resolve(e.data);
+            }, {once:true});
+            });
+            """
+            coords = streamlit_js_eval("aladin_click", js_expressions=js_promise,
+                                    key="aladin-catcher")
+
+            # --- C) Sonucu ekrana bas veya API'ye gönder ----------------------------
+            if coords:
+                st.success(f"RA (ICRS°): {coords['ra']:.6f}  •  Dec: {coords['dec']:.6f}")
+                # → burada coords ile sdss_nearest_obj(ra,dec) + objID + API çağrısı
+
     # ---------------------------------------------------------
     # Manuel Filtreleme Değerleri
     # ---------------------------------------------------------
@@ -650,7 +560,8 @@ if rf is not None and scaler is not None:
                     missing = [col for col in required_cols if col not in df.columns]
                     st.error(f"CSV dosyasında gerekli sütunlar eksik: {', '.join(missing)}")
             except Exception as e:
-                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")# ---------------------------------------------------------
+                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")
+    # ---------------------------------------------------------
     # Örnek Veriler
     # ---------------------------------------------------------
     elif input_method == "Örnek Veriler":
@@ -774,6 +685,27 @@ if rf is not None and scaler is not None:
                     st.pyplot(plot_predictions(pred_class, class_probs))
                 with col2:
                     st.pyplot(display_confidence_gauge(confidence))
+    # ---------------------------------------------------------
+    # ObjID ile Arama
+    # ---------------------------------------------------------
+    elif input_method == "ObjID ile Arama":
+        st.subheader("ObjID ile Gök Cismi Ara")
+        objid_input = st.text_input("ObjID girin:", "")
+
+        if objid_input:
+            try:
+                objid = int(objid_input)
+                with st.spinner("SDSS veritabanından objeyi sorguluyor..."):
+                    from prediction import get_sdss_object_by_id
+                    obj_data = get_sdss_object_by_id(objid)
+
+                if obj_data is not None and not obj_data.empty:
+                    st.success("ObjID ile eşleşen veri bulundu!")
+                    st.write(obj_data)
+                else:
+                    st.warning("Belirtilen ObjID ile eşleşen bir veri bulunamadı.")
+            except ValueError:
+                st.error("Geçersiz ObjID formatı. Lütfen bir tam sayı girin.")
 else:
     st.error("Random Forest modeli yüklenemedi. Lütfen model dosyalarını kontrol edin.")
 
