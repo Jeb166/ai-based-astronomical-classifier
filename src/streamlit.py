@@ -299,6 +299,21 @@ def query_nearest_obj(ra, dec, radius=0.01):
     
     return None
 
+def pick_band(row, band):
+    """
+    SDSS Row / Series içinden istenen bandın magnitüdünü bulur.
+    Tercih sırası:
+      u, psfMag_u, modelMag_u, cModelMag_u, fiberMag_u, petroMag_u (+büyük harf)
+    """
+    prefixes = ["", "psfMag_", "modelMag_", "cModelMag_", "fiberMag_", "petroMag_"]
+    cand_cols = [p + band for p in prefixes] + [band.upper()]
+    for c in cand_cols:
+        if c in row and pd.notna(row[c]):
+            return float(row[c])
+    return None
+
+
+
 # UI başlığı ve açıklaması
 st.title("🌌 AI Tabanlı Astronomik Gök Cismi Sınıflandırıcı")
 st.markdown("""
@@ -322,6 +337,14 @@ input_method = st.sidebar.radio(
     "Giriş metodu seçin:",
     ["Gökyüzü Haritası ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme"]
 )
+
+debug_mode = st.sidebar.checkbox("Debug modu")
+
+def debug(*args, **kwargs):
+    """Debug mod açıksa ekrana basar."""
+    if debug_mode:
+        st.write(*args, **kwargs)
+
 
 # Modeli yükle
 with st.spinner("Random Forest modeli yükleniyor..."):
@@ -359,27 +382,50 @@ if rf is not None and scaler is not None:
                 with st.spinner("SDSS’ten veri çekiliyor..."):
                     try:
                         row = None
-                        for dr in (18, 17, 16):                         # ← SON DÖNGÜ BURADA
+                        for dr in (18, 17, 16):
+                            st.write(f"ObjID sorgulanıyor, DR={dr}")
                             try:
-                                row = get_sdss_object_by_objid(objid_input.strip(), dr=dr)
-                                if row:                                 # Başarılıysa döngüden çık
+                                # get_sdss_object_by_objid içinde kullanılan istek URL'sini de görmek için debug
+                                st.write("Sorgu yapılacak URL: <fonksiyondan_alınan_url>")  # Örnek debug
+                                data = get_sdss_object_by_objid(objid_input.strip(), dr=dr)
+                                st.write(f"DR={dr} için fonksiyon döndürdüğü veri: {data}")
+                                if data is not None:
+                                    row = data
+                                    st.write(f"Veri bulundu: {row}")
                                     break
+                                else:
+                                    st.warning(f"Bu DR={dr} için kayıt bulunamadı. ObjID, DR={dr} kapsamı dışında olabilir.")
                             except Exception as e:
-                                print(f"DR{dr} denemesi hata verdi: {e}")
+                                st.error(f"DR{dr} sorgusu hata verdi: {e}")
                     except Exception as e:
                         st.error(f"SDSS servisine bağlanılamadı: {e}")
                         st.stop()
 
                 if row is None:
-                    st.error("Bu ObjID için kayıt bulunamadı.")
+                    st.error("Bu ObjID için hiçbir DR sürümünde kayıt bulunamadı. ObjID’nin geçerli olduğundan emin olun veya farklı bir örnek deneyin.")
                     st.stop()
 
-                # Foto-metrik değerleri feature-vectöre çevir
+                # 2-c) Feature-vector oluştur
+                u_  = pick_band(row, "u")
+                g_  = pick_band(row, "g")
+                r_  = pick_band(row, "r")
+                i_  = pick_band(row, "i")
+                z_  = pick_band(row, "z")
+
+                missing = [b for b,v in zip("ugriz", (u_,g_,r_,i_,z_)) if v is None]
+                if missing:
+                    st.error(f"Bu nesnede fotometrik veri eksik ({', '.join(missing)} bandı yok). "
+                            "Yarıçapı büyütüp farklı bir nesne deneyin.")
+                    st.stop()
+
                 fv = make_feature_vector(
-                    row["u"], row["g"], row["r"], row["i"], row["z"],
-                    plate=row["plate"], mjd=row["mjd"],
-                    fiberid=row["fiberid"], redshift=row.get("redshift", 0)
+                        u_, g_, r_, i_, z_,
+                        plate   = row.get("plate",   0),
+                        mjd     = row.get("mjd",     0),
+                        fiberid = row.get("fiberid", 0),
+                        redshift= row.get("redshift",0)
                 )
+
 
                 # Ölçekle + tahmin et
                 X_scaled, _ = preprocess_data(fv, scaler)
@@ -410,9 +456,68 @@ if rf is not None and scaler is not None:
 
             search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")
 
-            if st.button("Koordinatlar ile Ara ve Sınıflandır"):
-                st.info(f"Koordinatlar ile arama yapılıyor: RA={ra}, Dec={dec}, Yarıçap={search_radius}")
-                # Koordinatlar ile arama işlemleri burada yapılabilir
+            if st.button("Koordinatlar ile Ara ve Sınıflandır", key="coord_search"):
+                with st.spinner("SDSS’ten veri çekiliyor…"):
+                    # 2-a) Koordinata en yakın nesneyi çek
+                    radius_arcsec = search_radius * 3600        # derece → ″
+                    row = get_sdss_object_by_coords(ra, dec,
+                                                    radius_arcsec=radius_arcsec)
+
+                if row is None:
+                    st.error("Bu koordinatlarda nesne bulunamadı; yarıçapı büyütmeyi deneyin.")
+                    st.stop()
+
+                # 2-b) Astropy Row → pandas.Series
+                import pandas as pd
+
+                if debug_mode:                # Sidebar’daki "Debug modu" kutusu açıkken
+                    st.write("Gelen satır:", row)
+                    if isinstance(row, pd.Series):
+                        st.write("Sütun adları:", row.index.tolist())
+                    else:   # astropy Row
+                        st.write("Sütun adları:", row.colnames)
+
+                 # 2-c) Feature-vector oluştur
+                u_  = pick_band(row, "u")
+                g_  = pick_band(row, "g")
+                r_  = pick_band(row, "r")
+                i_  = pick_band(row, "i")
+                z_  = pick_band(row, "z")
+
+                missing = [b for b,v in zip("ugriz", (u_,g_,r_,i_,z_)) if v is None]
+                if missing:
+                    st.error(f"Fotometrik veri eksik: {', '.join(missing)} band(lar)ı yok.\n"
+                            "• Aynı koordinatta farklı objeler olabilir.\n"
+                            "• Yarıçapı büyütüp başka bir nesne seçin **ya da** u/g/r/i/z "
+                            "alanı içeren PhotoObj kaydını SQL ile çağırın.")
+                    st.stop()
+
+                fv = make_feature_vector(
+                        u_, g_, r_, i_, z_,
+                        plate   = row.get("plate",   0),
+                        mjd     = row.get("mjd",     0),
+                        fiberid = row.get("fiberid", 0),
+                        redshift= row.get("redshift",0)
+                )
+
+
+                # 2-d) Ölçekle + tahmin et
+                X_scaled, _ = preprocess_data(fv, scaler)
+                pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
+
+                # 2-e) Sonuçları göster
+                st.success(f"Tahmin: **{pred_class}**  —  Güven: **{confidence:.3f}**")
+                st.markdown(get_object_info_text(pred_class, confidence))
+
+                col1, col2 = st.columns(2)
+                col1.pyplot(plot_predictions(pred_class, class_probs))
+                col2.pyplot(display_confidence_gauge(confidence))
+
+                # 2-f) SDSS görüntüsü
+                img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
+                if img:
+                    st.image(img, caption="SDSS kesiti")
+
                 
     # ---------------------------------------------------------
     # Manuel Filtreleme Değerleri

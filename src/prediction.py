@@ -150,79 +150,79 @@ def get_spectra_link(obj_id):
         print(f"Spektrum bağlantısı oluşturulurken hata: {str(e)}")
         return None
 
-def get_sdss_object_by_coords(ra, dec, radius=5.0):
-    """SDSS'ten verilen koordinatlar için nesne bilgilerini çeker"""
-    try:
-        # Eğer ra/dec bir sözlükten geldiyse ve objID yerine string olarak bir koordinat ise
-        if isinstance(ra, str) and isinstance(dec, str):
-            try:
-                ra = float(ra)
-                dec = float(dec)
-            except ValueError:
-                print(f"Koordinat değerleri sayıya dönüştürülemedi: ra={ra}, dec={dec}")
-                return None
-        
-        # Eğer ra bir objID ise, SDSS API ile o ID'yi sorgula
-        if isinstance(ra, (int, str)) and not isinstance(ra, float):
-            try:
-                objid = int(ra) if isinstance(ra, str) else ra
-                results = SDSS.query_region(f"objid={objid}")
-                if results is not None and len(results) > 0:
-                    return results[0]
-                else:
-                    print(f"objID={objid} için nesne bulunamadı")
-                    return None
-            except Exception as e:
-                print(f"objID sorgusu sırasında hata: {str(e)}")
-                return None
-        
-        try:
-            # Önce normal koordinat sorgusu deneyelim
-            coords = SkyCoord(ra=ra*u.degree, dec=dec*u.degree, frame='icrs')
-            results = SDSS.query_region(coords, radius=radius*u.arcsec, spectro=True)
-            
-            if results is not None and len(results) > 0:
-                return results[0]
-                
-            # Alternatif olarak HTTP API'yi doğrudan çağıralım
-            print("Astroquery başarısız, HTTP API ile deneniyor...")
-            
-            # Manuel API çağrısı yapalım
-            api_urls = [
-                f"https://skyserver.sdss.org/dr16/SkyServer/ImagingQuery/Query?format=json&cmd=select+top+1+*+from+PhotoObj+where+ra+between+{ra-0.05}+and+{ra+0.05}+and+dec+between+{dec-0.05}+and+{dec+0.05}+order+by+sqrt(power(ra-{ra},2)+power(dec-{dec},2))",
-                f"https://skyserver.sdss.org/dr17/SkyServer/ImagingQuery/Query?format=json&cmd=select+top+1+*+from+PhotoObj+where+ra+between+{ra-0.05}+and+{ra+0.05}+and+dec+between+{dec-0.05}+and+{dec+0.05}+order+by+sqrt(power(ra-{ra},2)+power(dec-{dec},2))"
-            ]
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/json'
-            }
-            
-            for url in api_urls:
-                try:
-                    response = requests.get(url, headers=headers, timeout=30)
-                    if response.status_code == 200:
-                        json_data = response.json()
-                        if isinstance(json_data, dict) and 'Rows' in json_data and len(json_data['Rows']) > 0:
-                            # Manuel API'den gelen veriyi astropy.table.Table formatına dönüştür
-                            from astropy.table import Table
-                            return Table(json_data['Rows'][0])
-                except Exception as api_err:
-                    print(f"Manuel API çağrısı başarısız: {str(api_err)}")
-                    continue
-            
-            print(f"Koordinatlarda nesne bulunamadı: ra={ra}, dec={dec}, radius={radius}")
-            return None
-            
-        except Exception as astro_err:
-            print(f"Astroquery hatası: {str(astro_err)}")
-            return None
-            
-    except Exception as e:
-        print(f"SDSS veri çekilirken hata: {str(e)}")
+def sql_photoobj_cone_search(ra_deg, dec_deg,
+                             radius_arcsec=5,
+                             dr=18, topn=1):
+    """
+    (RA, Dec) çevresinde PhotoObj tablosuna konik arama (cone-search).
+    ugriz + opsiyonel psf/modelMag kolonları döndürür;
+    plate/mjd/fiberid PhotoObj’ta yok → sonradan 0 atanır.
+    """
+    # -- Sadece PhotoObj’ta VAR olan sütunlar --
+    fields = [
+        "p.ra", "p.dec", "p.objid",
+        "p.u", "p.g", "p.r", "p.i", "p.z",
+        "p.psfMag_u", "p.psfMag_g", "p.psfMag_r",
+        "p.psfMag_i", "p.psfMag_z",
+        f"dbo.fDistanceEq({ra_deg},{dec_deg},p.ra,p.dec) AS dist_arcsec"
+    ]
+
+    sql = f"""
+        SELECT TOP {topn}
+            {', '.join(fields)}
+        FROM PhotoObj AS p
+        WHERE dbo.fDistanceEq({ra_deg}, {dec_deg}, p.ra, p.dec) < {radius_arcsec}
+        ORDER BY dist_arcsec
+    """
+
+    tbl = SDSS.query_sql(sql, data_release=dr)
+    if tbl is None or len(tbl) == 0:
         return None
 
-import urllib.parse as ul, requests, pandas as pd
+    # Astropy Row ➜ pandas.Series
+    row = pd.Series({c: tbl[0][c] for c in tbl.colnames})
+
+    # PhotoObj’ta olmayan kolonları 0 ile ekle
+    for col in ("plate", "mjd", "fiberid", "redshift"):
+        row[col] = 0
+
+    return row
+
+
+# -------------------------------------------------
+# YENİ: ugriz garantili koordinat sorgusu
+# -------------------------------------------------
+def get_sdss_object_by_coords(ra, dec,
+                              radius_arcsec=15,
+                              dr=18):
+    """
+    1) PhotoObj SQL cone-search ⇒ ugriz + psf/modelMag + plate/mjd
+    2) (Opsiyonel) Astroquery spectro yedeği
+    radius_arcsec: yay-saniye (15″ ≈ 0.0042°)  
+    """
+    # 1) SQL cone-search (ugriz her zaman var)
+    row = sql_photoobj_cone_search(ra, dec,
+                                   radius_arcsec=radius_arcsec,
+                                   dr=dr, topn=1)
+    if row is not None:
+        return row                     # pandas.Series döner
+
+    # 2) Yedek plan (Astroquery spectro) – ugriz olmayabilir
+    try:
+        from astropy.coordinates import SkyCoord
+        from astropy import units as u
+        coords = SkyCoord(ra*u.deg, dec*u.deg)
+        res = SDSS.query_region(coords,
+                                radius=radius_arcsec*u.arcsec,
+                                spectro=True,
+                                photoobj_fields=["ra","dec","u","g","r","i","z"])
+        if res is not None and len(res) > 0:
+            return pd.Series({c: res[0][c] for c in res.colnames})
+    except Exception as e:
+        print(f"Astroquery yedeği hata verdi: {e}")
+
+    return None
+
 
 def _run_sql(sql: str, dr: int):
     """SQL’i çalıştır, 500 dönerse None, veri dönerse pandas.Series."""
