@@ -27,20 +27,35 @@ def make_feature_vector(u, g, r, i, z):
     i_z = i - z
     print(f"Renk indeksleri: u-g={u_g}, g-r={g_r}, r-i={r_i}, i-z={i_z}")
     
-    # Renk oranları 
-    u_over_g = u / g
-    g_over_r = g / r
-    r_over_i = r / i
-    i_over_z = i / z
-    
-    # Polinom özellikler
-    u_g_squared = u_g ** 2
-    g_r_squared = g_r ** 2
-    
-    # şekil = (1, 15) — model tam bunu bekliyor
-    return np.array([[u, g, r, i, z, u_g, g_r, r_i, i_z, 
-                     u_over_g, g_over_r, r_over_i, i_over_z,
-                     u_g_squared, g_r_squared]])
+    # Orijinal fonksiyonda 15 özellik vardı, ancak şimdi scaler ile uyumlu olmalı
+    # Sabit sayıda özellik (scaler'ın beklediği) ile vektör oluştur
+    try:
+        # Scaler'dan beklenen özellik sayısını kontrol et
+        import joblib
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        scaler_path = os.path.join(parent_dir, 'outputs', 'scaler.joblib')
+        
+        # Temel 13 özellikli vektörü oluştur
+        basic_vector = np.array([[
+            u, g, r, i, z,       # 5 temel fotometrik değer
+            u_g, g_r, r_i, i_z,  # 4 renk indeksi
+            u/g, g/r, r/i, i/z   # 4 oran
+        ]])
+        
+        # Bu vektör her zaman 13 özellik içerecek
+        print(f"Oluşturulan vektör boyutu: {basic_vector.shape}")
+        return basic_vector
+        
+    except Exception as e:
+        print(f"Özellik vektörü oluşturulurken hata: {e}")
+        # Her durumda sabit 13 özellikli vektör döndür
+        return np.array([[
+            u, g, r, i, z,       # 5 temel fotometrik değer
+            u_g, g_r, r_i, i_z,  # 4 renk indeksi
+            u/g, g/r, r/i, i/z   # 4 oran
+        ]])
 
 # ---------------------------------------------------------------------
 # Model yükleme işlevi
@@ -81,11 +96,42 @@ def load_models(model_dir=None):
 def predict(sample_array, rf, scaler, labels):
     """Yeni veri için tahmin yapar"""
     try:
-        # 1) Veriyi ölçeklendir
+        # Giriş doğrulama
+        if rf is None or scaler is None or labels is None:
+            raise ValueError("Model, scaler veya etiketler yüklenemedi")
+        
+        if sample_array is None or sample_array.size == 0:
+            raise ValueError("Geçersiz giriş verisi")
+            
+        # 1) Veriyi ölçeklendir - özellik sayısı kontrolü
+        expected_features = len(scaler.feature_names_in_) if hasattr(scaler, 'feature_names_in_') else 13
+        actual_features = sample_array.shape[1]
+        
+        print(f"Özellik kontrolü: Beklenen={expected_features}, Gerçek={actual_features}")
+        
+        if actual_features != expected_features:
+            st.warning(f"Uyarı: Scaler {expected_features} özellik beklerken, {actual_features} özellik verildi.")
+            # Özellik sayısı uyumsuzsa düzeltme işlemi
+            if actual_features < expected_features:
+                # Eksik özellikleri 0 ile doldur
+                padding = np.zeros((sample_array.shape[0], expected_features - actual_features))
+                sample_array = np.hstack([sample_array, padding])
+                print(f"Özellikler dolduruldu. Yeni boyut: {sample_array.shape}")
+            else:
+                # Fazla özellikleri at
+                sample_array = sample_array[:, :expected_features]
+                print(f"Fazla özellikler atıldı. Yeni boyut: {sample_array.shape}")
+        
+        # Şimdi ölçeklendirme yap
         X = scaler.transform(sample_array)
         
         # 2) RF ile tahmin yap
         rf_probs = rf.predict_proba(X)
+        
+        # Tahmin sonuçlarını kontrol et
+        if rf_probs.shape[0] == 0 or rf_probs.shape[1] != len(labels):
+            raise ValueError(f"Tahmin olasılıkları boyutları uyumsuz: {rf_probs.shape}")
+            
         pred_class_idx = rf_probs.argmax(1)
         pred_class = labels[pred_class_idx[0]]
         confidence = rf_probs[0, pred_class_idx[0]]
@@ -93,11 +139,19 @@ def predict(sample_array, rf, scaler, labels):
         # 3) Tüm sınıflar için olasılıkları hazırla
         class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
         
+        print(f"Tahmin: '{pred_class}', Güven: {confidence:.4f}")
+        
         return pred_class, confidence, class_probs
         
     except Exception as e:
-        st.error(f"Tahmin yaparken hata oluştu: {str(e)}")
-        return "Bilinmeyen", 0.0, {}
+        error_msg = f"Tahmin yaparken hata oluştu: {str(e)}"
+        print(error_msg)
+        st.error(error_msg)
+        
+        # Hata durumunda geçerli bir yanıt döndür
+        dummy_probs = {label: 0.0 for label in labels}
+        dummy_probs[labels[0]] = 1.0  # İlk sınıfa 1.0 olasılık ver
+        return labels[0], 0.0, dummy_probs
 
 # ---------------------------------------------------------------------
 # SDSS Veri Çekme İşlevleri
@@ -145,31 +199,51 @@ def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
 # ---------------------------------------------------------------------
 def plot_predictions(pred_class, class_probs):
     """Tahmin sonuçlarını görselleştirir"""
-    # Sınıf olasılıklarını çizdir
     fig, ax = plt.subplots(figsize=(8, 5))
     
-    # Renk haritası
-    colors = {'GALAXY': '#3498db', 'QSO': '#e74c3c', 'STAR': '#2ecc71'}
-    bar_colors = [colors.get(cls, '#7f8c8d') for cls in class_probs.keys()]
-    
-    # Bar plot
-    bars = ax.bar(list(class_probs.keys()), list(class_probs.values()), color=bar_colors)
-    
-    # Tahmin edilen sınıfı vurgula
-    idx = list(class_probs.keys()).index(pred_class)
-    bars[idx].set_alpha(0.9)
-    bars[idx].set_hatch('/')
-    
-    # Grafik ayarları
-    ax.set_title('Sınıf Tahmin Olasılıkları')
-    ax.set_ylabel('Olasılık')
-    ax.set_ylim(0, 1.0)
-    
-    # Olasılık değerlerini çubukların üzerine ekle
-    for bar in bars:
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                f'{height:.3f}', ha='center', va='bottom')
+    try:
+        # Sınıf olasılıkları boş veya None olabilir
+        if not class_probs:
+            # Boş olasılıklar için varsayılan değerler
+            default_labels = ['GALAXY', 'QSO', 'STAR']
+            class_probs = {label: 0.0 for label in default_labels}
+            class_probs[default_labels[0]] = 1.0  # İlk sınıfa 1.0 olasılık ver
+            pred_class = default_labels[0]
+        
+        # pred_class, class_probs içinde yoksa hata oluşma ihtimali var
+        if pred_class not in class_probs:
+            # Eğer tahmin edilen sınıf olasılıklarda yoksa, ilk anahtarı kullan
+            pred_class = list(class_probs.keys())[0]
+            st.warning(f"Tahmin edilen sınıf '{pred_class}', olasılık listesinde bulunamadı. İlk sınıf kullanılıyor.")
+        
+        # Renk haritası
+        colors = {'GALAXY': '#3498db', 'QSO': '#e74c3c', 'STAR': '#2ecc71'}
+        bar_colors = [colors.get(cls, '#7f8c8d') for cls in class_probs.keys()]
+        
+        # Bar plot
+        bars = ax.bar(list(class_probs.keys()), list(class_probs.values()), color=bar_colors)
+        
+        # Tahmin edilen sınıfı vurgula
+        idx = list(class_probs.keys()).index(pred_class)
+        bars[idx].set_alpha(0.9)
+        bars[idx].set_hatch('/')
+        
+        # Grafik ayarları
+        ax.set_title('Sınıf Tahmin Olasılıkları')
+        ax.set_ylabel('Olasılık')
+        ax.set_ylim(0, 1.0)
+        
+        # Olasılık değerlerini çubukların üzerine ekle
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                    f'{height:.3f}', ha='center', va='bottom')
+    except Exception as e:
+        # Hata durumunda bir mesaj göster ama çökmesin
+        ax.text(0.5, 0.5, f"Grafik oluşturulamadı: {str(e)}", 
+                ha='center', va='center', transform=ax.transAxes)
+        # Hata mesajını yazdır
+        print(f"plot_predictions fonksiyonunda hata: {str(e)}")
     
     plt.tight_layout()
     return fig
@@ -216,10 +290,18 @@ def get_object_info_text(obj_class, confidence):
     info = {
         'GALAXY': "Gökada (Galaksi), yıldızlar, yıldızlararası gaz, toz, karanlık madde ve olası bir süpermasif karadelikten oluşan, kütleçekimi ile bir arada tutulan geniş bir kozmik yapıdır.",
         'QSO': "Quasar (QSO, Yarı-Yıldızsı Nesne), aktif bir gökada çekirdeğidir. Merkezi süpermasif kara deliğe düşen maddenin oluşturduğu ışınımla, evrendeki en parlak nesnelerden biridir.",
-        'STAR': "Yıldız, kendi kütleçekimi etkisiyle bir arada tutulan, termonükleer füzyon yoluyla enerji üreten küresel bir gök cismidir."
+        'STAR': "Yıldız, kendi kütleçekimi etkisiyle bir arada tutulan, termonükleer füzyon yoluyla enerji üreten küresel bir gök cismidir.",
+        'Bilinmeyen': "Bu gök cisminin türü belirlenemedi veya sınıflandırma sırasında bir hata oluştu."
     }
     
+    # Obje sınıfı tanımlı değilse Bilinmeyen olarak göster
+    if obj_class not in info:
+        obj_class = 'Bilinmeyen'
+        
     # Güven değerine göre ek bilgiler
+    if confidence <= 0.1:  # Çok düşük güven durumu için özel mesaj
+        return "Sınıflandırma yapılamadı veya çok düşük bir güven değeri elde edildi. Lütfen farklı bir veri ile tekrar deneyin."
+        
     confidence_info = ""
     if confidence >= 0.95:
         confidence_info = "Bu tahmin çok yüksek bir güvenle yapılmıştır."

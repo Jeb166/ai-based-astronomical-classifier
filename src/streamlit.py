@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.express as px
+import seaborn as sns
 import base64
 from PIL import Image
 from io import BytesIO
@@ -21,6 +22,103 @@ from prediction import (
     make_feature_vector, plot_predictions, display_confidence_gauge, 
     get_object_info_text, get_spectra_link
 )
+
+# ---------------------------------------------------------------------
+# Veri ön işleme fonksiyonu (test_rf.py'den adapte edildi)
+# ---------------------------------------------------------------------
+def preprocess_data(df, scaler, debug=False):
+    """CSV verilerini RF modeli için ön işler ve scaler ile uyumlu hale getirir"""
+    try:
+        if debug:
+            st.write(f"Ön işleme öncesi veri boyutu: {df.shape}")
+        
+        # Eğer verinin kopyasını oluşturmamışsak, oluştur
+        df = df.copy()
+        
+        # Koordinat ve ID sütunlarını kaldır
+        cols_to_drop = []
+        for col in ['objid', 'specobjid', 'run', 'rerun', 'camcol', 'field', 'ra', 'dec']:
+            if col in df.columns:
+                cols_to_drop.append(col)
+        
+        if cols_to_drop:
+            df = df.drop(cols_to_drop, axis=1)
+            if debug:
+                st.write(f"Kaldırılan sütunlar: {cols_to_drop}")
+        
+        # Kategorik sütunları ayır
+        y = None
+        if 'class' in df.columns:
+            y = df['class'].copy()
+            df = df.drop(['class'], axis=1)
+        
+        # Renk indekslerini ekle (eğer beş temel filtre varsa)
+        if all(band in df.columns for band in ['u', 'g', 'r', 'i', 'z']):
+            if 'u_g' not in df.columns:
+                df["u_g"] = df["u"] - df["g"]
+            if 'g_r' not in df.columns:
+                df["g_r"] = df["g"] - df["r"]
+            if 'r_i' not in df.columns:
+                df["r_i"] = df["r"] - df["i"]
+            if 'i_z' not in df.columns:
+                df["i_z"] = df["i"] - df["z"]
+        
+        # Sayısal olmayan veya eksik değerleri kontrol et ve temizle
+        non_numeric_cols = df.select_dtypes(exclude=['number']).columns
+        if len(non_numeric_cols) > 0:
+            if debug:
+                st.warning(f"Sayısal olmayan sütunlar kaldırılıyor: {non_numeric_cols}")
+            df = df.drop(columns=non_numeric_cols)
+        
+        # NaN ve sonsuz değerleri kontrol et
+        nan_count = df.isna().sum().sum()
+        inf_count = ((df == np.inf) | (df == -np.inf)).sum().sum()
+        if nan_count > 0 or inf_count > 0:
+            if debug:
+                st.warning(f"Eksik değerler bulundu: {nan_count} NaN, {inf_count} sonsuz değer")
+            df.replace([np.inf, -np.inf], np.nan, inplace=True)
+            df.fillna(df.median(), inplace=True)
+        
+        # Scaler'ın özellik adlarını al
+        if hasattr(scaler, 'feature_names_in_'):
+            scaler_columns = set(scaler.feature_names_in_)
+            
+            # Özellik sütunlarını scaler'da olan sütunlarla eşleştir
+            feature_columns = set(df.columns)
+            
+            # Eksik sütunları kontrol et
+            missing_columns = scaler_columns - feature_columns
+            if missing_columns:
+                if debug:
+                    st.warning(f"Modelin beklediği bazı sütunlar eksik: {missing_columns}")
+                # Eksik sütunlar için 0 ile doldur
+                for col in missing_columns:
+                    df[col] = 0
+            
+            # Fazla sütunları kontrol et
+            extra_columns = feature_columns - scaler_columns
+            if extra_columns:
+                if debug:
+                    st.warning(f"Modelde olmayan fazla sütunlar kaldırılıyor: {extra_columns}")
+                df = df.drop(columns=extra_columns)
+            
+            # Sütun sıralamasını scaler ile uyumlu hale getir
+            df = df[scaler.feature_names_in_]
+        else:
+            if debug:
+                st.warning("Scaler'da feature_names_in_ özelliği bulunamadı. Sütun uyumluluğu kontrol edilemiyor.")
+        
+        # Veriyi ölçeklendir
+        X = scaler.transform(df)
+        
+        if debug:
+            st.write(f"Ön işleme sonrası özellik vektörü boyutu: {X.shape}")
+        
+        return X, y
+        
+    except Exception as e:
+        st.error(f"Veri ön işleme sırasında hata: {str(e)}")
+        return None, None
 
 # En yakın SDSS objesini bulmak için yardımcı fonksiyon
 def query_nearest_obj(ra, dec, radius=0.01):
@@ -278,8 +376,7 @@ if rf is not None and scaler is not None:
                     
             except Exception as e:
                 st.error(f"Sınıflandırma hatası: {str(e)}")
-    
-    # ---------------------------------------------------------
+      # ---------------------------------------------------------
     # CSV Dosyası Yükleme
     # ---------------------------------------------------------
     elif input_method == "CSV Dosyası Yükleme":
@@ -295,123 +392,90 @@ if rf is not None and scaler is not None:
         
         if uploaded_file is not None:
             try:
-                df = pd.read_csv(uploaded_file)
+                df = pd.read_csv(uploaded_file)                
                 st.write("CSV dosyası yüklendi! İlk birkaç satır:")
                 st.dataframe(df.head())
                 
                 # Gerekli sütunların olup olmadığını kontrol et
                 required_cols = ['u', 'g', 'r', 'i', 'z']
                 if all(col in df.columns for col in required_cols):
-                    if st.button("Toplu Sınıflandır", key="batch_classify"):
+                    show_debug = st.checkbox("Hata ayıklama bilgilerini göster", value=False)
+                    if st.button("Toplu Sınıflandır", key="batch_classify"):                        
                         with st.spinner("Sınıflandırma yapılıyor... Bu biraz zaman alabilir."):
-                            # Sütunları çıkar
-                            non_feature_cols = ['class', 'objid', 'specobjid', 'ra', 'dec', 'run', 'rerun', 'camcol', 'field', 'plate', 'mjd', 'fiberid', 'redshift']
-                            feature_df = df.copy()
-                            
-                            # Eğer class sütunu varsa, değerlendirme için sakla
-                            has_class = 'class' in feature_df.columns
-                            true_classes = None
-                            if has_class:
-                                true_classes = feature_df['class'].copy()
-                            
-                            # Gerekli olmayan sütunları kaldır
-                            for col in non_feature_cols:
-                                if col in feature_df.columns:
-                                    feature_df = feature_df.drop(col, axis=1)
-                            
-                            # Veri hazırlama (renk indeksleri ekleme)
-                            if 'u_g' not in feature_df.columns:
-                                feature_df['u_g'] = feature_df['u'] - feature_df['g']
-                            if 'g_r' not in feature_df.columns:
-                                feature_df['g_r'] = feature_df['g'] - feature_df['r']
-                            if 'r_i' not in feature_df.columns:
-                                feature_df['r_i'] = feature_df['r'] - feature_df['i']
-                            if 'i_z' not in feature_df.columns:
-                                feature_df['i_z'] = feature_df['i'] - feature_df['z']
-                            
-                            # Ölçeklendirme için diğer özellikler
-                            if 'u_over_g' not in feature_df.columns:
-                                feature_df['u_over_g'] = feature_df['u'] / feature_df['g']
-                            if 'g_over_r' not in feature_df.columns:
-                                feature_df['g_over_r'] = feature_df['g'] / feature_df['r']
-                            if 'r_over_i' not in feature_df.columns:
-                                feature_df['r_over_i'] = feature_df['r'] / feature_df['i']
-                            if 'i_over_z' not in feature_df.columns:
-                                feature_df['i_over_z'] = feature_df['i'] / feature_df['z']
-                            
-                            # Polinom özellikler
-                            if 'u_g_squared' not in feature_df.columns:
-                                feature_df['u_g_squared'] = feature_df['u_g'] ** 2
-                            if 'g_r_squared' not in feature_df.columns:
-                                feature_df['g_r_squared'] = feature_df['g_r'] ** 2
-                            
-                            # Veriyi ölçeklendir
-                            X_scaled = scaler.transform(feature_df)
-                            
-                            # Tahmin yap
-                            start_time = time.time()
-                            rf_probs = rf.predict_proba(X_scaled)
-                            pred_classes_idx = rf_probs.argmax(1)
-                            pred_classes = [labels[idx] for idx in pred_classes_idx]
-                            confidences = [rf_probs[i, idx] for i, idx in enumerate(pred_classes_idx)]
-                            
-                            # Sonuçları DataFrame'e ekle
-                            results_df = df.copy()
-                            results_df['predicted_class'] = pred_classes
-                            results_df['confidence'] = confidences
-                            
-                            # Sonuçları göster
-                            st.success(f"Sınıflandırma tamamlandı! ({time.time() - start_time:.2f} saniye)")
-                            st.dataframe(results_df)
-                            
-                            # İstatistikler
-                            st.subheader("Sınıflandırma İstatistikleri")
-                            
-                            # Sınıf dağılımı
-                            class_dist = pd.Series(pred_classes).value_counts()
-                            st.bar_chart(class_dist)
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric("Ortalama Güven", f"{np.mean(confidences):.4f}")
-                            with col2:
-                                st.metric("Medyan Güven", f"{np.median(confidences):.4f}")
-                            
-                            # Gerçek değerler ile karşılaştırma
-                            if has_class:
-                                from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+                            try:
+                                # test_rf.py'de kullanılan preprocess_data fonksiyonunu kullan
+                                X_scaled, true_classes = preprocess_data(df, scaler, debug=show_debug)
                                 
-                                accuracy = accuracy_score(true_classes, pred_classes)
-                                st.metric("Doğruluk (Accuracy)", f"{accuracy:.4f}")
-                                
-                                st.subheader("Sınıflandırma Raporu")
-                                report = classification_report(true_classes, pred_classes, output_dict=True)
-                                report_df = pd.DataFrame(report).transpose()
-                                st.dataframe(report_df)
-                                
-                                st.subheader("Karmaşıklık Matrisi")
-                                cm = confusion_matrix(true_classes, pred_classes)
-                                fig, ax = plt.subplots(figsize=(8, 6))
-                                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                                            xticklabels=labels,
-                                            yticklabels=labels)
-                                plt.title('Karmaşıklık Matrisi')
-                                plt.xlabel('Tahmin Edilen Sınıf')
-                                plt.ylabel('Gerçek Sınıf')
-                                st.pyplot(fig)
-                            
-                            # Sonuçları CSV olarak indirme
-                            csv = results_df.to_csv(index=False)
-                            b64 = base64.b64encode(csv.encode()).decode()
-                            href = f'<a href="data:file/csv;base64,{b64}" download="siniflandirma_sonuclari.csv">Sonuçları CSV Olarak İndir</a>'
-                            st.markdown(href, unsafe_allow_html=True)
+                                if X_scaled is None:
+                                    st.error("Veri ön işleme başarısız oldu.")
+                                else:
+                                    # Tahmin yap
+                                    start_time = time.time()
+                                    rf_probs = rf.predict_proba(X_scaled)
+                                    
+                                    # Sonuçları çıkar
+                                    pred_classes_idx = rf_probs.argmax(1)
+                                    pred_classes = [labels[idx] for idx in pred_classes_idx]
+                                    confidences = [rf_probs[i, idx] for i, idx in enumerate(pred_classes_idx)]
+                                    
+                                    # Sonuçları DataFrame'e ekle
+                                    results_df = df.copy()
+                                    results_df['predicted_class'] = pred_classes
+                                    results_df['confidence'] = confidences
+                                    
+                                    # Sonuçları göster
+                                    st.success(f"Sınıflandırma tamamlandı! ({time.time() - start_time:.2f} saniye)")
+                                    st.dataframe(results_df)
+                                    
+                                    # İstatistikler
+                                    st.subheader("Sınıflandırma İstatistikleri")
+                                    
+                                    # Sınıf dağılımı
+                                    class_dist = pd.Series(pred_classes).value_counts()
+                                    st.bar_chart(class_dist)
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.metric("Ortalama Güven", f"{np.mean(confidences):.4f}")
+                                    with col2:
+                                        st.metric("Medyan Güven", f"{np.median(confidences):.4f}")
+                                    
+                                    # Gerçek değerler ile karşılaştırma
+                                    has_class = 'class' in df.columns and true_classes is not None
+                                    if has_class:
+                                        from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+                                        
+                                        accuracy = accuracy_score(true_classes, pred_classes)
+                                        st.metric("Doğruluk (Accuracy)", f"{accuracy:.4f}")
+                                        
+                                        st.subheader("Sınıflandırma Raporu")
+                                        report = classification_report(true_classes, pred_classes, output_dict=True)
+                                        report_df = pd.DataFrame(report).transpose()
+                                        st.dataframe(report_df)
+                                        
+                                        st.subheader("Karmaşıklık Matrisi")
+                                        cm = confusion_matrix(true_classes, pred_classes)
+                                        fig, ax = plt.subplots(figsize=(8, 6))
+                                        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                                                    xticklabels=labels,
+                                                    yticklabels=labels)
+                                        plt.title('Karmaşıklık Matrisi')
+                                        plt.xlabel('Tahmin Edilen Sınıf')
+                                        plt.ylabel('Gerçek Sınıf')
+                                        st.pyplot(fig)
+                                    
+                                    # Sonuçları CSV olarak indirme
+                                    csv = results_df.to_csv(index=False)
+                                    b64 = base64.b64encode(csv.encode()).decode()
+                                    href = f'<a href="data:file/csv;base64,{b64}" download="siniflandirma_sonuclari.csv">Sonuçları CSV Olarak İndir</a>'
+                                    st.markdown(href, unsafe_allow_html=True)
+                            except Exception as e:
+                                st.error(f"Sınıflandırma sırasında hata oluştu: {str(e)}")
                 else:
                     missing = [col for col in required_cols if col not in df.columns]
                     st.error(f"CSV dosyasında gerekli sütunlar eksik: {', '.join(missing)}")
             except Exception as e:
-                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")
-    
-    # ---------------------------------------------------------
+                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")# ---------------------------------------------------------
     # Örnek Veriler
     # ---------------------------------------------------------
     elif input_method == "Örnek Veriler":
