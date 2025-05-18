@@ -1,4 +1,4 @@
-# 🔭 AI-based Astronomical Classifier (2025 Edition)
+# 🔭 AI-based Astronomical Classifier 
 
 Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflandırmak ve yıldızların alt türlerini tahmin etmek için eğitilmiş makine öğrenmesi ve derin öğrenme modellerini içerir. SDSS (Sloan Digital Sky Survey) verileri üzerinde eğitilmiş modellerle %99'a varan doğrulukla temel sınıflandırma yapabilmektedir.
 
