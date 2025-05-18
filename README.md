@@ -1,16 +1,14 @@
-# 🔭 AI-based Astronomical Classifier 
+# 🔭 AI-based Astronomical Classifier
 
-Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflandırmak ve yıldızların alt türlerini tahmin etmek için eğitilmiş makine öğrenmesi ve derin öğrenme modellerini içerir. SDSS (Sloan Digital Sky Survey) verileri üzerinde eğitilmiş modellerle %99'a varan doğrulukla temel sınıflandırma yapabilmektedir.
+Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflandırmak için geliştirilmiş bir makine öğrenmesi modelini içermektedir. SDSS (Sloan Digital Sky Survey) verileri üzerinde eğitilmiş model, temel sınıflandırma görevlerinde yüksek doğruluk sağlamaktadır.
 
-## 🚀 Özellikler ve Yenilikler
+## Özellikler
 
-- **Yüksek Doğruluklu Temel Sınıflandırma**: Galaksi, kuasar ve yıldız sınıflandırmasında %99 doğruluk.
-- **Optimize Random Forest Algoritması**: Yüksek hız ve doğruluk dengesini sağlayan geliştirilmiş sınıflandırma algoritması.
-- **Streamlit Web Arayüzü**: Kullanıcı dostu web arayüzü ile gökyüzü nesnelerini anında analiz edebilme imkanı.
-- **Otomatik Parametre Optimizasyonu**: Kullanıcının manuel konfigürasyon yapmasına gerek kalmadan optimum performans.
-- **SDSS API Entegrasyonu**: Koordinatlarla gerçek zamanlı gökyüzü görüntüsü ve spektrum verisi erişimi.
+- **Temel Sınıflandırma**: Galaksi, kuasar ve yıldız sınıflandırmasında yüksek doğruluk.
+- **Random Forest Algoritması**: Dengeli bir hız ve doğruluk sağlayan optimize edilmiş bir sınıflandırma algoritması.
+- **Streamlit Web Arayüzü**: Kullanıcıların sınıflandırma işlemlerini kolayca gerçekleştirebileceği bir web arayüzü.
 
-## 🔧 Kurulum ve Çalıştırma
+## Kurulum ve Çalıştırma
 
 ### Yerel Bilgisayarda Kurulum
 
@@ -20,13 +18,13 @@ git clone https://github.com/yourusername/ai-based-astronomical-classifier.git
 cd ai-based-astronomical-classifier
 ```
 
-2. Sanal ortam oluşturun (opsiyonel ama önerilir):
+2. Sanal ortam oluşturun (opsiyonel):
 ```bash
 python -m venv venv
 # Windows'da
 venv\Scripts\activate
 # Linux/Mac'de
-# source venv/bin/activate
+source venv/bin/activate
 ```
 
 3. Gereksinimleri yükleyin:
@@ -34,28 +32,32 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Çalıştırma Seçenekleri
+### Çalıştırma Adımları
 
-#### 1. Web Arayüzü İle Çalıştırma (Önerilen)
-```bash
-streamlit run src/streamlit.py
-```
-Bu komut, tarayıcınızda otomatik olarak Streamlit arayüzünü açacaktır.
+#### 1. Modeli Eğitme
 
-#### 2. Komut Satırı Versiyonu
+Modeli kullanmadan önce eğitmeniz gerekmektedir. Bunun için aşağıdaki komutu çalıştırın:
 ```bash
 python src/main.py
 ```
-Bu komut, temel Random Forest modelini eğitecek ve sonuçları konsolda gösterecektir.
+Bu işlem, modeli eğitecek ve gerekli dosyaları `outputs/` klasörüne kaydedecektir.
 
-## 📂 Proje Yapısı
+#### 2. Web Arayüzü İle Kullanım
+
+Model eğitildikten sonra Streamlit arayüzünü başlatabilirsiniz:
+```bash
+streamlit run src/streamlit.py
+```
+Bu komut, tarayıcınızda Streamlit arayüzünü açacaktır.
+
+## Proje Yapısı
 
 ```
 ai-based-astronomical-classifier/
 │
 ├── src/                  # Kaynak kod
-│   ├── main.py           # Ana program (CLI versiyonu)
-│   ├── streamlit.py      # Web arayüzü (Streamlit app)
+│   ├── main.py           # Ana program (model eğitimi)
+│   ├── streamlit.py      # Web arayüzü
 │   ├── prediction.py     # Tahmin fonksiyonları
 │   ├── prepare_data.py   # Veri hazırlama modülü
 │   └── data_analysis.py  # Veri analiz araçları
@@ -74,11 +76,11 @@ ai-based-astronomical-classifier/
 └── README.md             # Bu dokümantasyon
 ```
 
-## 📊 Model Performansı
+## Model Performansı
 
-- **Random Forest Modeli**: Galaksi/Kuasar/Yıldız ayrımında ~99% doğruluk
+- **Random Forest Modeli**: Galaksi/Kuasar/Yıldız ayrımında yüksek doğruluk.
 
-## 🔧 Teknik Detaylar
+## Teknik Detaylar
 
 Kullanılan temel özellikler:
 - 5 band fotometrik magnitude (u, g, r, i, z)
@@ -88,7 +90,7 @@ Kullanılan temel özellikler:
 Model mimarisi:
 - Random Forest ile temel sınıflandırma (500 ağaç ve optimize edilmiş hiperparametreler)
 
-## 📦 Gereksinimler
+## Gereksinimler
 
 ```
 pandas >= 1.3.0
@@ -105,43 +107,10 @@ astroquery >= 0.4.6
 astropy >= 5.0.0
 ```
 
-## 📝 Kullanım Örnekleri
-
-### Python Kodunda Kullanım
-
-```python
-import joblib
-import numpy as np
-
-# Modeli ve scaler'ı yükle
-model = joblib.load('outputs/rf_model.joblib')
-scaler = joblib.load('outputs/scaler.joblib')
-
-# Veri ön işleme
-sample = np.array([[18.5, 17.2, 16.8, 16.5, 16.3, 0.2, 0.3, 0.1]])  # u,g,r,i,z,redshift,...
-sample_scaled = scaler.transform(sample)
-
-# Tahmin
-prediction = model.predict(sample_scaled)
-probabilities = model.predict_proba(sample_scaled)
-
-print(f"Tahmin edilen sınıf: {prediction}")
-print(f"Sınıf olasılıkları: {probabilities}")
-```
-
-### Web Arayüzünde Kullanım
-
-1. Streamlit uygulamasını başlatın: `streamlit run src/streamlit.py`
-2. Koordinat veya özellik değerleri girin
-3. "Sınıflandır" butonuna tıklayın
-
-## 📃 Lisans
+## Lisans
 
 Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için LICENSE dosyasına bakın.
 
-## 📧 İletişim
+## İletişim
 
-Sorularınız ve önerileriniz için: emre@example.com
-
----
-*Son güncelleme: Mayıs 2025*
+Sorularınız için: emre@example.com
