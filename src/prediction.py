@@ -52,19 +52,27 @@ def load_models(model_dir=None):
             parent_dir = os.path.dirname(current_dir)
             model_dir = os.path.join(parent_dir, 'outputs')
         
-        # Model dosya yollarını belirle
-        dnn_path = os.path.join(model_dir, 'dnn_model.keras')
+        # Model dosya yollarını belirle        dnn_path = os.path.join(model_dir, 'dnn_model.keras')
         rf_path = os.path.join(model_dir, 'rf_model.joblib')
         scaler_path = os.path.join(model_dir, 'scaler.joblib')
+        ensemble_params_path = os.path.join(model_dir, 'ensemble_params.joblib')
         
         # Modelleri yükle
         dnn = load_model(dnn_path)
         rf = joblib.load(rf_path)
         scaler = joblib.load(scaler_path)
         
-        # Sınıf etiketleri ve ensemble ağırlığı
+        # Sınıf etiketleri
         labels = np.array(['GALAXY', 'QSO', 'STAR'])
-        best_w = 0.3  # Bu değer hiperparametre optimizasyonu ile bulunmuştur
+        
+        # Ensemble ağırlığını yükle
+        try:
+            ensemble_params = joblib.load(ensemble_params_path)
+            best_w = ensemble_params.get('best_w', 0.5)
+            print(f"Ensemble ağırlığı başarıyla yüklendi: {best_w}")
+        except Exception as e:
+            print(f"Ensemble parametreleri yüklenemedi: {e}")
+            best_w = 0.3  # Yedek değer
         
         return dnn, rf, scaler, labels, best_w
     except Exception as e:

@@ -4,6 +4,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
+import platform
+import sys
 from sklearn.metrics import confusion_matrix
 from sklearn.utils import class_weight
 from sklearn.ensemble import RandomForestClassifier
@@ -101,27 +103,82 @@ def main():
     plt.title('Confusion Matrix — Best‑W Ensemble')
     plt.tight_layout()
     plt.savefig(f"{out_dir}/confusion_ens_bestw.png", dpi=150)
-    plt.show()
-
-    # ------------------------------------------------------------------
+    plt.show()    # ------------------------------------------------------------------
     # 6) SAVE MODELS
     # ------------------------------------------------------------------
-    dnn.save(f"{out_dir}/dnn_model.keras")
-    import joblib
-    joblib.dump(rf, f"{out_dir}/rf_model.joblib")
-    joblib.dump(scaler, f"{out_dir}/scaler.joblib")
+    try:
+        print("\nModeller kaydediliyor...")
+        dnn.save(f"{out_dir}/dnn_model.keras")
+        print(f"DNN modeli başarıyla kaydedildi: {out_dir}/dnn_model.keras")
+        
+        import joblib
+        import time
+        import platform
+        from datetime import datetime
+        
+        # Modelleri kaydet
+        joblib.dump(rf, f"{out_dir}/rf_model.joblib")
+        print(f"Random Forest modeli başarıyla kaydedildi: {out_dir}/rf_model.joblib")
+        
+        joblib.dump(scaler, f"{out_dir}/scaler.joblib")
+        print(f"Scaler başarıyla kaydedildi: {out_dir}/scaler.joblib")
+        
+        # Model metadatasını hazırla
+        try:
+            model_info = {
+                'version': '1.0',
+                'training_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'data_file': data_path,
+                'feature_count': X_tr.shape[1],
+                'class_counts': {cls: int((df_full['class'] == cls).sum()) for cls in labels},
+                'dnn_params': {
+                    'layers': [l.name for l in dnn.layers],
+                    'neurons': [l.units if hasattr(l, 'units') else None for l in dnn.layers]
+                },
+                'rf_params': {
+                    'n_estimators': rf.n_estimators,
+                    'max_depth': rf.max_depth if hasattr(rf, 'max_depth') else None,
+                    'oob_score': float(rf.oob_score_),
+                    'random_state': rf.random_state
+                },
+                'ensemble_weight': float(best_w),
+                'features': list(X_tr.columns),
+                'accuracy': {
+                    'dnn': float(dnn_acc),
+                    'rf': float(rf_acc),
+                    'ensemble': float(ens_acc)
+                },
+                'system_info': {
+                    'python_version': platform.python_version(),
+                    'tensorflow_version': tf.__version__,
+                    'sklearn_version': sklearn.__version__ if 'sklearn' in sys.modules else None,
+                    'os': platform.system(),
+                    'processor': platform.processor()
+                }
+            }
+            
+            # Metadatayı kaydet
+            joblib.dump(model_info, f"{out_dir}/model_metadata.joblib")
+            print(f"Model metadata başarıyla kaydedildi: {out_dir}/model_metadata.joblib")
+            
+            # Ensemble parametrelerini ayrıca kaydet
+            ensemble_params = {
+                'best_w': float(best_w),
+                'dnn_model_path': f"{out_dir}/dnn_model.keras",
+                'rf_model_path': f"{out_dir}/rf_model.joblib",
+                'scaler_path': f"{out_dir}/scaler.joblib"
+            }
+            joblib.dump(ensemble_params, f"{out_dir}/ensemble_params.joblib")
+            print(f"Ensemble parametreleri başarıyla kaydedildi: {out_dir}/ensemble_params.joblib")
+            
+        except Exception as e:
+            print(f"\nModel metadata kaydedilirken hata oluştu: {e}")
+    
+    except Exception as e:
+        print(f"\nModeller kaydedilirken hata oluştu: {e}")
       # İşlem tamamlandı mesajı
     print("\nTemel sınıflandırma modeli eğitimi tamamlandı!")
     print(f"Modeller {out_dir} klasörüne kaydedildi.")
-    
-    # Özellik önemliliği analizi
-    print("\n" + "="*70)
-    print("RANDOM FOREST ÖZELLİK ÖNEMİ ANALİZİ".center(70))
-    print("="*70)
-    
-    # Özellik önemlerini analiz et
-    importance_df = analyze_feature_importance(rf, X_tr.columns)
-    group_importance = analyze_feature_groups(importance_df)
     
     # ------------------ helper for UI / further use -----------------
     global full_predict
@@ -320,26 +377,54 @@ def evaluate_models():
     data_path = 'data/skyserver.csv'
     X_tr, X_val, X_te, y_tr, y_val, y_te, df_full, _ = load_and_prepare(data_path)
     y_te_lbl = y_te.argmax(1)
-    
-    # Modelleri yükle
+      # Modelleri yükle
     print("Modeller yükleniyor...")
-    dnn = tf.keras.models.load_model(f"{out_dir}/dnn_model.keras")
-    rf = joblib.load(f"{out_dir}/rf_model.joblib")
-    
-    # En iyi ağırlığı bul (validation seti üzerinde)
-    dnn_val = dnn.predict(X_val)
-    rf_val = rf.predict_proba(X_val)
-    y_val_lbl = y_val.argmax(1)
-    
-    best_w, best_acc = 0.5, 0.0
-    for w in np.linspace(0.1, 0.9, 9):
-        proba_acc = ((w*dnn_val+(1-w)*rf_val).argmax(1)==y_val_lbl).mean()
-        if proba_acc > best_acc:
-            best_w, best_acc = w, proba_acc
-    
-    print(f"Optimum DNN ağırlığı: {best_w:.2f} (validation acc={best_acc*100:.2f}%)")
-    
-    # Test seti sonuçlarını hesapla
+    try:
+        dnn = tf.keras.models.load_model(f"{out_dir}/dnn_model.keras")
+        rf = joblib.load(f"{out_dir}/rf_model.joblib")
+        
+        # Model metadata ve ensemble parametrelerini yüklemeyi dene
+        try:
+            metadata = joblib.load(f"{out_dir}/model_metadata.joblib")
+            ensemble_params = joblib.load(f"{out_dir}/ensemble_params.joblib")
+            
+            # Metadata bilgilerini göster
+            print("\n--- MODEL METADATA BİLGİLERİ ---")
+            print(f"Model Sürümü: {metadata.get('version', 'Belirtilmemiş')}")
+            print(f"Eğitim Tarihi: {metadata.get('training_date', 'Belirtilmemiş')}")
+            print(f"Özellik Sayısı: {metadata.get('feature_count', 'Belirtilmemiş')}")
+            
+            # Doğruluk bilgilerini göster
+            if 'accuracy' in metadata:
+                print(f"\nKayıtlı Model Doğrulukları:")
+                print(f"  DNN: {metadata['accuracy']['dnn']:.3f}%")
+                print(f"  RF: {metadata['accuracy']['rf']:.3f}%")
+                print(f"  Ensemble: {metadata['accuracy']['ensemble']:.3f}%")
+            
+            # Ensemble parametrelerini kullan
+            best_w = ensemble_params.get('best_w', 0.5)
+            print(f"Optimum DNN ağırlığı: {best_w:.2f} (metadata'dan alındı)")
+            
+        except (FileNotFoundError, KeyError) as e:
+            print(f"Metadata yüklenirken hata: {e}")
+            print("Optimum ağırlık yeniden hesaplanacak...")
+            
+            # En iyi ağırlığı bul (validation seti üzerinde)
+            dnn_val = dnn.predict(X_val)
+            rf_val = rf.predict_proba(X_val)
+            y_val_lbl = y_val.argmax(1)
+            
+            best_w, best_acc = 0.5, 0.0
+            for w in np.linspace(0.1, 0.9, 9):
+                proba_acc = ((w*dnn_val+(1-w)*rf_val).argmax(1)==y_val_lbl).mean()
+                if proba_acc > best_acc:
+                    best_w, best_acc = w, proba_acc
+            
+            print(f"Optimum DNN ağırlığı: {best_w:.2f} (yeniden hesaplandı, acc={best_acc*100:.2f}%)")
+    except Exception as e:
+        print(f"Modeller yüklenirken hata: {e}")
+        return None    # Test seti sonuçlarını hesapla
+    print("\nTest sonuçları hesaplanıyor...")
     dnn_probs = dnn.predict(X_te)
     rf_probs = rf.predict_proba(X_te)
     ens_probs = best_w*dnn_probs + (1-best_w)*rf_probs
@@ -392,26 +477,13 @@ def evaluate_models():
     sns.heatmap(confusion_matrix(y_te_lbl, ens_preds), annot=True, fmt='d',
                 xticklabels=labels, yticklabels=labels, cmap='Oranges')
     plt.title('Ensemble - Karışıklık Matrisi')
-    
     plt.tight_layout()
     plt.savefig(f"{out_dir}/model_comparison.png", dpi=150)
     plt.show()
     
     print(f"\nModel karşılaştırma görseli '{out_dir}/model_comparison.png' olarak kaydedildi.")
     
-    # RF modelinin özellik analizini yap
-    print("\n" + "="*70)
-    print("RANDOM FOREST ÖZELLİK ÖNEMLİLİĞİ ANALİZİ".center(70))
-    print("="*70)
-    importance_df = analyze_feature_importance(rf, X_te.columns)
-    
-    # Özellik gruplarını analiz et
-    print("\n" + "="*70)
-    print("ÖZELLİK GRUPLARI ANALİZİ".center(70))
-    print("="*70)
-    group_importance = analyze_feature_groups(importance_df)
-    
-    return dnn, rf, best_w, importance_df, group_importance
+    return dnn, rf, best_w
 
 if __name__ == '__main__':
     # Gerekli kütüphaneleri kontrol et
