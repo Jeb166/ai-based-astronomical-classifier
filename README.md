@@ -2,12 +2,6 @@
 
 Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflandırmak için geliştirilmiş bir makine öğrenmesi modelini içermektedir. SDSS (Sloan Digital Sky Survey) verileri üzerinde eğitilmiş model, temel sınıflandırma görevlerinde yüksek doğruluk sağlamaktadır.
 
-## Özellikler
-
-- **Temel Sınıflandırma**: Galaksi, kuasar ve yıldız sınıflandırmasında yüksek doğruluk.
-- **Random Forest Algoritması**: Dengeli bir hız ve doğruluk sağlayan optimize edilmiş bir sınıflandırma algoritması.
-- **Streamlit Web Arayüzü**: Kullanıcıların sınıflandırma işlemlerini kolayca gerçekleştirebileceği bir web arayüzü.
-
 ## Kurulum ve Çalıştırma
 
 ### Yerel Bilgisayarda Kurulum
