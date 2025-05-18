@@ -265,29 +265,27 @@ if rf is not None and scaler is not None:
         st.markdown("""
         SDSS'in beş temel fotometrik filtreleme değerlerini (u, g, r, i, z) girerek sınıflandırma yapabilirsiniz.
         Değerleri kadir (magnitude) cinsinden giriniz.
-        """)
-        
-        col1, col2, col3 = st.columns(3)
+        """)        
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            u_mag = st.number_input("u filtresi (kadir)", min_value=10.0, max_value=30.0, value=19.0, format="%.4f")
-            g_mag = st.number_input("g filtresi (kadir)", min_value=10.0, max_value=30.0, value=17.5, format="%.4f")
+            u_mag = st.number_input("u filtresi (kadir)", min_value=10.0, max_value=30.0, value=19.0, format="%.5f")
         with col2:
-            r_mag = st.number_input("r filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.8, format="%.4f")
-            i_mag = st.number_input("i filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.5, format="%.4f")
+            g_mag = st.number_input("g filtresi (kadir)", min_value=10.0, max_value=30.0, value=17.5, format="%.5f")
         with col3:
-            z_mag = st.number_input("z filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.2, format="%.4f")
-        
-        st.markdown("### Ek SDSS Parametreleri (Opsiyonel)")
-        st.markdown("Bu parametreler model tarafından beklenmektedir. Bilmiyorsanız varsayılan değerleri kullanabilirsiniz.")
+            r_mag = st.number_input("r filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.8, format="%.5f")
+        with col4:
+            i_mag = st.number_input("i filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.5, format="%.5f")
+        with col5:
+            z_mag = st.number_input("z filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.2, format="%.5f")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            plate = st.number_input("Plate ID", min_value=0, max_value=10000, value=1000)
+            plate = st.number_input("Plate ID", min_value=0, max_value=20000, value=1000)
         with col2:
-            mjd = st.number_input("MJD (Modified Julian Date)", min_value=50000, max_value=60000, value=55000)        
-            with col3:
-                fiberid = st.number_input("Fiber ID", min_value=0, max_value=1000, value=500)
+            mjd = st.number_input("MJD (Modified Julian Date)", min_value=50000, max_value=60000, value=55000)
+        with col3:
+            fiberid = st.number_input("Fiber ID", min_value=0, max_value=1000, value=500)
         with col4:
-            redshift = st.number_input("Redshift (z)", min_value=-1.0, max_value=10.0, value=0.1, format="%.4f")
+            redshift = st.number_input("Redshift (z)", min_value=-1.0, max_value=10.0, value=0.1, format="%.10f")
         
         if st.button("Sınıflandır", key="manual_classify"):
             try:
