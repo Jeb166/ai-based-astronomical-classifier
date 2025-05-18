@@ -107,4 +107,4 @@ Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için LICENSE dosyas
 
 ## İletişim
 
-Sorularınız için: emre@example.com
+Sorularınız için: emrebas02@hotmail.com
