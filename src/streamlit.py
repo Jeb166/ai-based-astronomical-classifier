@@ -283,11 +283,11 @@ if rf is not None and scaler is not None:
         with col1:
             plate = st.number_input("Plate ID", min_value=0, max_value=10000, value=1000)
         with col2:
-            mjd = st.number_input("MJD (Modified Julian Date)", min_value=50000, max_value=60000, value=55000)
-        with col3:
-            fiberid = st.number_input("Fiber ID", min_value=0, max_value=1000, value=500)
+            mjd = st.number_input("MJD (Modified Julian Date)", min_value=50000, max_value=60000, value=55000)        
+            with col3:
+                fiberid = st.number_input("Fiber ID", min_value=0, max_value=1000, value=500)
         with col4:
-            redshift = st.number_input("Redshift (z)", min_value=0.0, max_value=10.0, value=0.1, format="%.4f")
+            redshift = st.number_input("Redshift (z)", min_value=-1.0, max_value=10.0, value=0.1, format="%.4f")
         
         if st.button("Sınıflandır", key="manual_classify"):
             try:
