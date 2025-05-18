@@ -193,6 +193,8 @@ if rf is not None and scaler is not None:
         """
         components.html(aladin_iframe, height=520)
 
+        st.info("İpucu: Haritada RA ve Dec koordinatlarını öğrenmek için mouse ile bir noktaya tıkladıktan sonra sağ üstte görünen koordinat bilgilerini kullanabilirsiniz. Koordinat sistemini sol üstte **ICRSd** olarak ayarlayın.")
+
         col1, col2 = st.columns(2)
         with col1:
             ra = st.number_input("Sağ Açıklık (RA)", min_value=0.0, max_value=360.0, value=180.0, format="%.6f")
