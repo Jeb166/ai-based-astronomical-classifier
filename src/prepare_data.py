@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from keras.utils import to_categorical
-from imblearn.over_sampling import SMOTE
 
 def load_and_prepare(filename: str):
     # Read and shuffle data
@@ -93,7 +92,8 @@ def load_and_prepare(filename: str):
     print(f"Son 5 özellik: {X_train.columns[-5:].tolist() if len(X_train.columns) >= 5 else X_train.columns.tolist()}")
 
     return X_train, X_validation, X_test, y_train, y_validation, y_test, sdss_df, scaler
-
+"""
+from imblearn.over_sampling import SMOTE
 def load_star_subset(filename: str):
     import pandas as pd
     from sklearn.model_selection import train_test_split
@@ -276,4 +276,4 @@ def load_star_subset(filename: str):
     return (X_train_res, X_val, X_test,
             y_train_res_oh, y_val_oh, y_test_oh,
             le, scaler)
-
+"""
