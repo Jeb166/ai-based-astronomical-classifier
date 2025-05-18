@@ -14,57 +14,6 @@ import requests
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
-import logging
-
-# Logging yapılandırması
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
-
-setup_logging()
-
-# -------------------------------------------------
-# SDSS SQL Sorguları
-# -------------------------------------------------
-def sdss_sql(sql, dr=18):
-    """SDSS veri tabanında SQL sorgusu çalıştırır"""
-    try:
-        import requests
-        url = f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/SearchTools/SqlSearch"
-        r = requests.get(url, params={"cmd": sql, "format": "json"}, timeout=30)
-        r.raise_for_status()
-        rows = r.json().get("Rows", [])
-        return rows[0] if rows else None
-    except Exception as e:
-        logging.error(f"SDSS SQL sorgusu hatası: {str(e)}")
-        return None
-
-def sdss_nearest_obj(ra, dec, dr=18, radius=0.00014):   # ≈0.5 arcsec
-    """
-    Verilen RA ve Dec koordinatlarına en yakın SDSS objesini sorgular.
-
-    Parameters:
-        ra (float): Sağ açıklık (RA) koordinatı (derece)
-        dec (float): Dik açıklık (Dec) koordinatı (derece)
-        dr (int): SDSS veri sürümü (default: 18)
-        radius (float): Arama yarıçapı (default: 0.00014 derece ≈ 0.5 arcsec)
-
-    Returns:
-        pandas.DataFrame: En yakın objenin bilgileri
-    """
-    sql = (
-        "SELECT TOP 1 p.objid, p.ra, p.dec "
-        "FROM PhotoObjAll AS p "
-        f"WHERE p.ra BETWEEN {ra-radius} AND {ra+radius} "
-        f"  AND p.dec BETWEEN {dec-radius} AND {dec+radius} "
-        "ORDER BY dbo.fGetNearbyObjEq({ra},{dec}, {radius})"
-    )
-    return sdss_sql(sql, dr)
 
 # -------------------------------------------------
 # Özellik vektörü oluşturma - Renk filtreleri ve indeksler
@@ -86,9 +35,9 @@ def make_feature_vector(u, g, r, i, z, plate=None, mjd=None, fiberid=None, redsh
         'redshift': [redshift if redshift is not None else 0]
     })
     
-    logging.info(f"Temel fotometrik değerler: u={u}, g={g}, r={r}, i={i}, z={z}")
-    logging.info(f"Ek SDSS parametreleri: plate={plate}, mjd={mjd}, fiberid={fiberid}, redshift={redshift}")
-    logging.info(f"Oluşturulan DataFrame boyutu: {data.shape}")
+    print(f"Temel fotometrik değerler: u={u}, g={g}, r={r}, i={i}, z={z}")
+    print(f"Ek SDSS parametreleri: plate={plate}, mjd={mjd}, fiberid={fiberid}, redshift={redshift}")
+    print(f"Oluşturulan DataFrame boyutu: {data.shape}")
     
     return data
 
@@ -117,13 +66,10 @@ def load_models(model_dir=None):
         # Sınıf etiketleri
         labels = np.array(['GALAXY', 'QSO', 'STAR'])
         
-        logging.info(f"Random Forest modeli başarıyla yüklendi: {rf_path}")
-        logging.info(f"Scaler başarıyla yüklendi: {scaler_path}")
+        print(f"Random Forest modeli başarıyla yüklendi: {rf_path}")
+        print(f"Scaler başarıyla yüklendi: {scaler_path}")
         
         return rf, scaler, labels
-    except Exception as e:
-        st.error(f"Model yüklenirken hata oluştu: {str(e)}")
-        return None, None, None
     except Exception as e:
         st.error(f"Model yüklenirken hata oluştu: {str(e)}")
         return None, None, None
@@ -148,25 +94,25 @@ def predict(sample_array, rf, scaler, labels):
         expected_features = len(scaler.feature_names_in_) if hasattr(scaler, 'feature_names_in_') else 13
         actual_features = sample_array.shape[1]
         
-        logging.info(f"Özellik kontrolü: Beklenen={expected_features}, Gerçek={actual_features}")
+        print(f"Özellik kontrolü: Beklenen={expected_features}, Gerçek={actual_features}")
         
         # 2) Özellik sayısını eşitleyelim (gerekirse)
         adjusted_sample = sample_array.copy()
         if actual_features != expected_features:
-            logging.info(f"Özellik sayısını ayarlıyorum: {actual_features} -> {expected_features}")
+            print(f"Özellik sayısını ayarlıyorum: {actual_features} -> {expected_features}")
             if actual_features < expected_features:
                 # Eksik özellikleri 0 ile doldur
                 padding = np.zeros((adjusted_sample.shape[0], expected_features - actual_features))
                 adjusted_sample = np.hstack([adjusted_sample, padding])
-                logging.info(f"Eksik özellikler 0 ile dolduruldu. Yeni boyut: {adjusted_sample.shape}")
+                print(f"Eksik özellikler 0 ile dolduruldu. Yeni boyut: {adjusted_sample.shape}")
             else:
                 # Fazla özellikleri at
                 adjusted_sample = adjusted_sample[:, :expected_features]
-                logging.info(f"Fazla özellikler atıldı. Yeni boyut: {adjusted_sample.shape}")
+                print(f"Fazla özellikler atıldı. Yeni boyut: {adjusted_sample.shape}")
         
         # 3) Ölçeklendirme yap (scaler kullan)
         X_scaled = scaler.transform(adjusted_sample)
-        logging.info(f"Ölçeklendirilmiş özellik vektörü boyutu: {X_scaled.shape}")
+        print(f"Ölçeklendirilmiş özellik vektörü boyutu: {X_scaled.shape}")
         
         # 4) Tahmin yap (RF modeli ile)
         rf_probs = rf.predict_proba(X_scaled)
@@ -179,14 +125,14 @@ def predict(sample_array, rf, scaler, labels):
         # 6) Tüm sınıf olasılıklarını hazırla
         class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
         
-        logging.info(f"Tahmin: '{pred_class}', Güven: {confidence:.4f}")
-        logging.info(f"Tüm sınıf olasılıkları: {class_probs}")
+        print(f"Tahmin: '{pred_class}', Güven: {confidence:.4f}")
+        print(f"Tüm sınıf olasılıkları: {class_probs}")
         
         return pred_class, confidence, class_probs
         
     except Exception as e:
         error_msg = f"Tahmin yaparken hata oluştu: {str(e)}"
-        logging.error(error_msg)
+        print(error_msg)
         st.error(error_msg)
         
         # Hata durumunda varsayılan değer döndür
@@ -201,7 +147,7 @@ def get_spectra_link(obj_id):
     try:
         return f"https://dr16.sdss.org/optical/spectrum/view/data/format=lite?plateid={obj_id['plate']}&mjd={obj_id['mjd']}&fiberid={obj_id['fiberid']}"
     except Exception as e:
-        logging.error(f"Spektrum bağlantısı oluşturulurken hata: {str(e)}")
+        print(f"Spektrum bağlantısı oluşturulurken hata: {str(e)}")
         return None
 
 def get_sdss_object_by_coords(ra, dec, radius=5.0):
@@ -213,7 +159,7 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
                 ra = float(ra)
                 dec = float(dec)
             except ValueError:
-                logging.warning(f"Koordinat değerleri sayıya dönüştürülemedi: ra={ra}, dec={dec}")
+                print(f"Koordinat değerleri sayıya dönüştürülemedi: ra={ra}, dec={dec}")
                 return None
         
         # Eğer ra bir objID ise, SDSS API ile o ID'yi sorgula
@@ -224,10 +170,10 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
                 if results is not None and len(results) > 0:
                     return results[0]
                 else:
-                    logging.warning(f"objID={objid} için nesne bulunamadı")
+                    print(f"objID={objid} için nesne bulunamadı")
                     return None
             except Exception as e:
-                logging.error(f"objID sorgusu sırasında hata: {str(e)}")
+                print(f"objID sorgusu sırasında hata: {str(e)}")
                 return None
         
         try:
@@ -239,7 +185,7 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
                 return results[0]
                 
             # Alternatif olarak HTTP API'yi doğrudan çağıralım
-            logging.info("Astroquery başarısız, HTTP API ile deneniyor...")
+            print("Astroquery başarısız, HTTP API ile deneniyor...")
             
             # Manuel API çağrısı yapalım
             api_urls = [
@@ -262,18 +208,18 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
                             from astropy.table import Table
                             return Table(json_data['Rows'][0])
                 except Exception as api_err:
-                    logging.warning(f"Manuel API çağrısı başarısız: {str(api_err)}")
+                    print(f"Manuel API çağrısı başarısız: {str(api_err)}")
                     continue
             
-            logging.warning(f"Koordinatlarda nesne bulunamadı: ra={ra}, dec={dec}, radius={radius}")
+            print(f"Koordinatlarda nesne bulunamadı: ra={ra}, dec={dec}, radius={radius}")
             return None
             
         except Exception as astro_err:
-            logging.error(f"Astroquery hatası: {str(astro_err)}")
+            print(f"Astroquery hatası: {str(astro_err)}")
             return None
             
     except Exception as e:
-        logging.error(f"SDSS veri çekilirken hata: {str(e)}")
+        print(f"SDSS veri çekilirken hata: {str(e)}")
         return None
 
 def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
@@ -318,7 +264,7 @@ def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
         }
         
         for url in urls:
-            logging.info(f"Görüntü URL'si deneniyor: {url}")
+            print(f"Görüntü URL'si deneniyor: {url}")
             
             try:
                 response = requests.get(url, headers=headers, timeout=30)
@@ -326,34 +272,34 @@ def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
                 if response.status_code == 200 and response.content:
                     # Content-Type kontrol et
                     content_type = response.headers.get('Content-Type', '')
-                    logging.info(f"Görüntü yanıt content-type: {content_type}")
+                    print(f"Görüntü yanıt content-type: {content_type}")
                     
                     if 'image' in content_type:
-                        logging.info(f"Başarılı görüntü elde edildi: {len(response.content)} bayt")
+                        print(f"Başarılı görüntü elde edildi: {len(response.content)} bayt")
                         return Image.open(BytesIO(response.content))
                     elif 'text/html' in content_type:
                         # HTML döndüyse ve içinde bir resim etiketi varsa, o resmi çekmeyi dene
-                        logging.info("HTML içeriği döndü, resim etiketi aranıyor...")
+                        print("HTML içeriği döndü, resim etiketi aranıyor...")
                         if b'<img' in response.content:
-                            logging.info("HTML içinde resim etiketi bulundu, doğrudan görseli çekmeye çalışılacak")
+                            print("HTML içinde resim etiketi bulundu, doğrudan görseli çekmeye çalışılacak")
                             continue
                         else:
-                            logging.warning("HTML içinde resim etiketi bulunamadı")
+                            print("HTML içinde resim etiketi bulunamadı")
                             continue
                     else:
-                        logging.warning(f"İçerik resim değil: {content_type}")
+                        print(f"İçerik resim değil: {content_type}")
                         continue
                 else:
-                    logging.warning(f"Görüntü çekilemedi: HTTP {response.status_code}")
+                    print(f"Görüntü çekilemedi: HTTP {response.status_code}")
                     continue
             except Exception as e:
-                logging.error(f"URL isteği hatası: {str(e)}")
+                print(f"URL isteği hatası: {str(e)}")
                 continue
         
-        logging.error("Tüm görüntü URL'leri başarısız oldu")
+        print("Tüm görüntü URL'leri başarısız oldu")
         return None
     except Exception as e:
-        logging.error(f"Görüntü çekilirken hata: {str(e)}")
+        print(f"Görüntü çekilirken hata: {str(e)}")
         return None
 
 # ---------------------------------------------------------------------
@@ -405,7 +351,7 @@ def plot_predictions(pred_class, class_probs):
         ax.text(0.5, 0.5, f"Grafik oluşturulamadı: {str(e)}", 
                 ha='center', va='center', transform=ax.transAxes)
         # Hata mesajını yazdır
-        logging.error(f"plot_predictions fonksiyonunda hata: {str(e)}")
+        print(f"plot_predictions fonksiyonunda hata: {str(e)}")
     
     plt.tight_layout()
     return fig
@@ -477,41 +423,3 @@ def get_object_info_text(obj_class, confidence):
         confidence_info = "Bu tahmin düşük bir güvenle yapılmıştır ve yanlış olabilir."
     
     return f"{info.get(obj_class, 'Bilinmeyen nesne tipi.')} {confidence_info}"
-
-def get_sdss_object_by_id(objid: int, dr: int = 18):
-    """
-    SDSS'ten verilen objID için nesne bilgilerini çeker.
-
-    Parameters:
-        objid (int): SDSS objID değeri
-        dr (int): SDSS veri sürümü (default: 18)
-
-    Returns:
-        pandas.DataFrame veya None: Bulunan nesne bilgileri
-    """
-    sql = (
-        "SELECT TOP 1 p.objid, p.ra, p.dec, p.u, p.g, p.r, p.i, p.z, "
-        "s.plate, s.mjd, s.fiberid, s.z AS redshift "
-        "FROM PhotoObjAll AS p "
-        "LEFT JOIN SpecObjAll AS s ON p.objid = s.bestObjID "
-        f"WHERE p.objid = {objid}"
-    )
-    url = f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/SearchTools/SqlSearch"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json'
-    }
-
-    try:
-        response = requests.get(url, params={"cmd": sql, "format": "json"}, headers=headers, timeout=30)
-        response.raise_for_status()
-        rows = response.json().get("Rows", [])
-        if rows:
-            logging.info(f"ObjID={objid} için veri bulundu.")
-            return pd.DataFrame(rows)
-        else:
-            logging.warning(f"ObjID={objid} için veri bulunamadı.")
-            return None
-    except Exception as e:
-        logging.error(f"SDSS objID sorgusu sırasında hata: {str(e)}")
-        return None

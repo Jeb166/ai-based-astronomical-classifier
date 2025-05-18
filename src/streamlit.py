@@ -15,8 +15,6 @@ import urllib.parse as ul
 import requests
 import os
 import time
-from streamlit.components.v1 import html
-from streamlit_js_eval import streamlit_js_eval
 
 # Model işlevlerini ve tahmin işlevlerini içe aktar
 from prediction import (
@@ -134,7 +132,7 @@ def query_nearest_obj(ra, dec, radius=0.01):
         
     Returns:
         pandas.DataFrame: Bulunan gök cisimlerinin verileri
-    """    # Farklı SDSS DR API'lerini deneyelim - HTTP 500 hatası durumunda alternatif API'ler kullanılacak
+    """    # Farklı SDSS DR API URL'lerini deneyelim - HTTP 500 hatası durumunda alternatif API'ler kullanılacak
     urls = [
         # DR18 en son sürüm (navigasyon sayfasından)
         f"https://skyserver.sdss.org/dr18/SkyServer/SearchTools/RadialSearch?ra={ra}&dec={dec}&radius={radius}&format=json",
@@ -298,7 +296,7 @@ st.sidebar.markdown("SDSS veri tabanını kullanarak gök cismi sınıflandırma
 # Giriş metodu seçimi
 input_method = st.sidebar.radio(
     "Giriş metodu seçin:",
-    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme", "Örnek Veriler", "ObjID ile Arama"]
+    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme", "Örnek Veriler"]
 )
 
 # Modeli yükle
@@ -312,69 +310,44 @@ if rf is not None and scaler is not None:
     # ---------------------------------------------------------
     if input_method == "Koordinat ile Arama":
         
-        st.subheader("Koordinat ile Gök Cismi Ara")
-        st.markdown("### Aladin Lite ile Koordinat Seçimi")
+        st.subheader("Koordinat ile Gök Cismi Ara")        
+        st.markdown("### SDSS DR18 Navigasyon Aracı")
+        st.markdown("SDSS'in Aladin Sky Atlas kullanan navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")          
+        sdss_iframe = """
+        <iframe id="naviframe" scrolling="yes" allow="clipboard-write" 
+                style="width: 100%; height: 750px; overflow: visible; border:1px solid #ccc; border-radius:5px; background-color: #fff;" 
+                src="https://skyserver.sdss.org/navigate/?ra=180&dec=0&scale=0.3&dr=18&opt=&embedded=true"></iframe>
+        """
+        components.html(sdss_iframe, height=800)
 
-        # Aladin Lite entegrasyonu
-        coords = st.text_input("RA ve Dec koordinatlarını girin (örnek: 180.0, 0.0):", "")
+        # ObjID ve Koordinat ile arama için sekmeler oluştur
+        tab1, tab2 = st.tabs(["ObjID ile Ara", "Koordinat ile Ara"])
 
-        if coords:
-            try:
-                ra, dec = map(float, coords.split(","))
-                with st.spinner("SDSS veritabanından en yakın objeyi sorguluyor..."):
-                    from prediction import sdss_nearest_obj
-                    nearest_obj = sdss_nearest_obj(ra, dec)
+        with tab1:
+            st.markdown("### ObjID ile Gök Cismi Ara")
+            objid_input = st.text_input("SDSS Nesne ID (objID)", placeholder="ObjID girin...")
 
-                if nearest_obj is not None and not nearest_obj.empty:
-                    st.success("En yakın obje bulundu!")
-                    st.write(nearest_obj)
+            if st.button("ObjID ile Ara ve Sınıflandır"):
+                if objid_input:
+                    st.info(f"ObjID ile arama yapılıyor: {objid_input}")
+                    # ObjID ile arama işlemleri burada yapılabilir
                 else:
-                    st.warning("Belirtilen koordinatlara yakın bir obje bulunamadı.")
-            except ValueError:
-                st.error("Geçersiz koordinat formatı. Lütfen RA ve Dec değerlerini virgülle ayırarak girin.")
-        
-            # --- A) Harita HTML-si --------------------------------------------------
-            aladin_html = """
-            <link  rel="stylesheet"
-                href="https://aladin.u-strasbg.fr/AladinLite/v3/latest/aladin.min.css"/>
-            <script src="https://aladin.u-strasbg.fr/AladinLite/v3/latest/aladin.min.js"></script>
+                    st.warning("Lütfen bir ObjID girin.")
 
-            <div id="aladin-div" style="width:100%; height:500px;"></div>
+        with tab2:
+            st.markdown("### Koordinat ile Gök Cismi Ara")
+            col1, col2 = st.columns(2)
+            with col1:
+                ra = st.number_input("Sağ Açıklık (RA)", min_value=0.0, max_value=360.0, value=180.0, format="%.6f")
+            with col2:
+                dec = st.number_input("Dik Açıklık (Dec)", min_value=-90.0, max_value=90.0, value=0.0, format="%.6f")
 
-            <script>
-            // 1 • Aladin Lite'ı başlat
-            const aladin = A.aladin('#aladin-div', {
-            survey: 'P/SDSS9/color',   // renkli SDSS çevirimi; HiPS'te DR18 henüz yok
-            fov: 1,                    // görüş alanı (derece)
-            cooFrame: 'ICRSd',         // on-click çıktı: derece
-            target: '0 +0'             // başlangıç merkezi (RA Dec)
-            });
+            search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")
 
-            // 2 • Kullanıcı kaynak seçince koord. al → Streamlit'e yolla
-            aladin.on('clickObject', obj => {
-            const msg = {type:'aladin_coords', ra:obj.data.ra, dec:obj.data.dec};
-            window.parent.postMessage(msg, '*');
-            });
-            </script>
-            """
-            html(aladin_html, height=530)
-
-            # --- B) Tarayıcıdan gelen koord. — tek seferlik dinle -------------------
-            js_promise = """
-            new Promise(resolve => {
-            window.addEventListener('message', e => {
-                if (e.data?.type === 'aladin_coords') resolve(e.data);
-            }, {once:true});
-            });
-            """
-            coords = streamlit_js_eval("aladin_click", js_expressions=js_promise,
-                                    key="aladin-catcher")
-
-            # --- C) Sonucu ekrana bas veya API'ye gönder ----------------------------
-            if coords:
-                st.success(f"RA (ICRS°): {coords['ra']:.6f}  •  Dec: {coords['dec']:.6f}")
-                # → burada coords ile sdss_nearest_obj(ra,dec) + objID + API çağrısı
-
+            if st.button("Koordinatlar ile Ara ve Sınıflandır"):
+                st.info(f"Koordinatlar ile arama yapılıyor: RA={ra}, Dec={dec}, Yarıçap={search_radius}")
+                # Koordinatlar ile arama işlemleri burada yapılabilir
+                
     # ---------------------------------------------------------
     # Manuel Filtreleme Değerleri
     # ---------------------------------------------------------
@@ -560,8 +533,7 @@ if rf is not None and scaler is not None:
                     missing = [col for col in required_cols if col not in df.columns]
                     st.error(f"CSV dosyasında gerekli sütunlar eksik: {', '.join(missing)}")
             except Exception as e:
-                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")
-    # ---------------------------------------------------------
+                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")# ---------------------------------------------------------
     # Örnek Veriler
     # ---------------------------------------------------------
     elif input_method == "Örnek Veriler":
@@ -685,27 +657,6 @@ if rf is not None and scaler is not None:
                     st.pyplot(plot_predictions(pred_class, class_probs))
                 with col2:
                     st.pyplot(display_confidence_gauge(confidence))
-    # ---------------------------------------------------------
-    # ObjID ile Arama
-    # ---------------------------------------------------------
-    elif input_method == "ObjID ile Arama":
-        st.subheader("ObjID ile Gök Cismi Ara")
-        objid_input = st.text_input("ObjID girin:", "")
-
-        if objid_input:
-            try:
-                objid = int(objid_input)
-                with st.spinner("SDSS veritabanından objeyi sorguluyor..."):
-                    from prediction import get_sdss_object_by_id
-                    obj_data = get_sdss_object_by_id(objid)
-
-                if obj_data is not None and not obj_data.empty:
-                    st.success("ObjID ile eşleşen veri bulundu!")
-                    st.write(obj_data)
-                else:
-                    st.warning("Belirtilen ObjID ile eşleşen bir veri bulunamadı.")
-            except ValueError:
-                st.error("Geçersiz ObjID formatı. Lütfen bir tam sayı girin.")
 else:
     st.error("Random Forest modeli yüklenemedi. Lütfen model dosyalarını kontrol edin.")
 
