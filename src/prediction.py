@@ -138,20 +138,18 @@ def predict(sample_array, rf, scaler, labels):
         
         # 3) Tüm sınıflar için olasılıkları hazırla
         class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
-        
         print(f"Tahmin: '{pred_class}', Güven: {confidence:.4f}")
         
         return pred_class, confidence, class_probs
-        
     except Exception as e:
         error_msg = f"Tahmin yaparken hata oluştu: {str(e)}"
         print(error_msg)
         st.error(error_msg)
         
-        # Hata durumunda geçerli bir yanıt döndür
-        dummy_probs = {label: 0.0 for label in labels}
-        dummy_probs[labels[0]] = 1.0  # İlk sınıfa 1.0 olasılık ver
-        return labels[0], 0.0, dummy_probs
+        # Hata durumunda HATA olduğunu belirten bir yanıt döndür - artık varsayılan galaxy döndürmeyeceğiz
+        # Her sınıfa eşit olasılık ver (hatalı olduğunu belirtmek için)
+        dummy_probs = {label: 1.0/len(labels) for label in labels}
+        return "HATA", 0.0, dummy_probs
 
 # ---------------------------------------------------------------------
 # SDSS Veri Çekme İşlevleri

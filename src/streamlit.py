@@ -343,10 +343,13 @@ if rf is not None and scaler is not None:
         with col3:
             z_mag = st.number_input("z filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.2, format="%.4f")
         
-        if st.button("Sınıflandır", key="manual_classify"):
+        if st.button("Sınıflandır", key="manual_classify"):            
             try:
                 # Özellik vektörü oluştur
                 sample = make_feature_vector(u_mag, g_mag, r_mag, i_mag, z_mag)
+                
+                # Scaler formatını kontrol et
+                st.write(f"Debug - Özellik vektörü: şekil={sample.shape}, tip={type(sample)}")
                 
                 # Tahmini yap
                 with st.spinner("Sınıflandırma yapılıyor..."):
@@ -355,6 +358,11 @@ if rf is not None and scaler is not None:
                     # Sonuçları göster
                     st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
                     st.markdown(f"**Güven Değeri:** {confidence:.4f}")
+                    
+                    # Tahmin olasılıklarını göster
+                    st.write("Tahmin olasılıkları:")
+                    for cls, prob in class_probs.items():
+                        st.write(f"{cls}: {prob:.4f}")
                     
                     # Açıklama ekle
                     st.markdown(get_object_info_text(pred_class, confidence))
