@@ -315,7 +315,7 @@ if rf is not None and scaler is not None:
         
         sdss_iframe = """
         <iframe id="naviframe" scrolling="no" allow="clipboard-write" 
-                style="width: 100%; overflow: hidden; border:1px solid #ccc; border-radius:5px;" 
+                style="width: 100%; overflow: hidden; border:1px solid #ccc; border-radius:5px; background-color: #fff;" 
                 height="550" 
                 src="https://skyserver.sdss.org/navigate/?ra=180&dec=0&scale=0.3&dr=18&opt=&embedded=true"></iframe>
         <script>
@@ -331,7 +331,7 @@ if rf is not None and scaler is not None:
         });
         </script>
         """
-        components.html(sdss_iframe, height=570)        
+        components.html(sdss_iframe, height=570)
         st.info("İpucu: Haritada RA ve Dec koordinatlarını öğrenmek için mouse ile bir noktaya tıkladıktan sonra sağ üstte görünen koordinat bilgilerini kullanabilirsiniz. Koordinat sistemini sol üstte **ICRSd** olarak ayarlayın.")
 
         col1, col2 = st.columns(2)
