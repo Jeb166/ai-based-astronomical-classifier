@@ -18,44 +18,28 @@ import seaborn as sns
 # -------------------------------------------------
 # Özellik vektörü oluşturma - Renk filtreleri ve indeksler
 # -------------------------------------------------
-def make_feature_vector(u, g, r, i, z):
-    """5 temel fotometrik filtreden özellik vektörü oluşturur"""
-    # Renk indeksleri
-    u_g = u - g
-    g_r = g - r
-    r_i = r - i
-    i_z = i - z
-    print(f"Renk indeksleri: u-g={u_g}, g-r={g_r}, r-i={r_i}, i-z={i_z}")
+def make_feature_vector(u, g, r, i, z, plate=None, mjd=None, fiberid=None, redshift=None):
+    """5 temel fotometrik filtreden DataFrame oluşturur
+    preprocess_data() fonksiyonu ile tutarlı şekilde çalışacak.
+    """
+    # Temel 5 fotometrik değer ve ek SDSS parametrelerini içeren DataFrame oluştur
+    data = pd.DataFrame({
+        'u': [u],
+        'g': [g],
+        'r': [r],
+        'i': [i],
+        'z': [z],
+        'plate': [plate if plate is not None else 0],
+        'mjd': [mjd if mjd is not None else 0],
+        'fiberid': [fiberid if fiberid is not None else 0],
+        'redshift': [redshift if redshift is not None else 0]
+    })
     
-    # Orijinal fonksiyonda 15 özellik vardı, ancak şimdi scaler ile uyumlu olmalı
-    # Sabit sayıda özellik (scaler'ın beklediği) ile vektör oluştur
-    try:
-        # Scaler'dan beklenen özellik sayısını kontrol et
-        import joblib
-        import os
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        scaler_path = os.path.join(parent_dir, 'outputs', 'scaler.joblib')
-        
-        # Temel 13 özellikli vektörü oluştur
-        basic_vector = np.array([[
-            u, g, r, i, z,       # 5 temel fotometrik değer
-            u_g, g_r, r_i, i_z,  # 4 renk indeksi
-            u/g, g/r, r/i, i/z   # 4 oran
-        ]])
-        
-        # Bu vektör her zaman 13 özellik içerecek
-        print(f"Oluşturulan vektör boyutu: {basic_vector.shape}")
-        return basic_vector
-        
-    except Exception as e:
-        print(f"Özellik vektörü oluşturulurken hata: {e}")
-        # Her durumda sabit 13 özellikli vektör döndür
-        return np.array([[
-            u, g, r, i, z,       # 5 temel fotometrik değer
-            u_g, g_r, r_i, i_z,  # 4 renk indeksi
-            u/g, g/r, r/i, i/z   # 4 oran
-        ]])
+    print(f"Temel fotometrik değerler: u={u}, g={g}, r={r}, i={i}, z={z}")
+    print(f"Ek SDSS parametreleri: plate={plate}, mjd={mjd}, fiberid={fiberid}, redshift={redshift}")
+    print(f"Oluşturulan DataFrame boyutu: {data.shape}")
+    
+    return data
 
 # ---------------------------------------------------------------------
 # Model yükleme işlevi
@@ -94,7 +78,10 @@ def load_models(model_dir=None):
 # Tahmin işlevi
 # ---------------------------------------------------------------------
 def predict(sample_array, rf, scaler, labels):
-    """Yeni veri için tahmin yapar"""
+    """
+    Yeni veri için tahmin yapar
+    CSV yükleme bölümü ile aynı tahmin mantığını kullanır
+    """
     try:
         # Giriş doğrulama
         if rf is None or scaler is None or labels is None:
@@ -103,51 +90,52 @@ def predict(sample_array, rf, scaler, labels):
         if sample_array is None or sample_array.size == 0:
             raise ValueError("Geçersiz giriş verisi")
             
-        # 1) Veriyi ölçeklendir - özellik sayısı kontrolü
+        # 1) Ölçeklendirme için özellik sayısı kontrolü
         expected_features = len(scaler.feature_names_in_) if hasattr(scaler, 'feature_names_in_') else 13
         actual_features = sample_array.shape[1]
         
         print(f"Özellik kontrolü: Beklenen={expected_features}, Gerçek={actual_features}")
         
+        # 2) Özellik sayısını eşitleyelim (gerekirse)
+        adjusted_sample = sample_array.copy()
         if actual_features != expected_features:
-            st.warning(f"Uyarı: Scaler {expected_features} özellik beklerken, {actual_features} özellik verildi.")
-            # Özellik sayısı uyumsuzsa düzeltme işlemi
+            print(f"Özellik sayısını ayarlıyorum: {actual_features} -> {expected_features}")
             if actual_features < expected_features:
                 # Eksik özellikleri 0 ile doldur
-                padding = np.zeros((sample_array.shape[0], expected_features - actual_features))
-                sample_array = np.hstack([sample_array, padding])
-                print(f"Özellikler dolduruldu. Yeni boyut: {sample_array.shape}")
+                padding = np.zeros((adjusted_sample.shape[0], expected_features - actual_features))
+                adjusted_sample = np.hstack([adjusted_sample, padding])
+                print(f"Eksik özellikler 0 ile dolduruldu. Yeni boyut: {adjusted_sample.shape}")
             else:
                 # Fazla özellikleri at
-                sample_array = sample_array[:, :expected_features]
-                print(f"Fazla özellikler atıldı. Yeni boyut: {sample_array.shape}")
+                adjusted_sample = adjusted_sample[:, :expected_features]
+                print(f"Fazla özellikler atıldı. Yeni boyut: {adjusted_sample.shape}")
         
-        # Şimdi ölçeklendirme yap
-        X = scaler.transform(sample_array)
+        # 3) Ölçeklendirme yap (scaler kullan)
+        X_scaled = scaler.transform(adjusted_sample)
+        print(f"Ölçeklendirilmiş özellik vektörü boyutu: {X_scaled.shape}")
         
-        # 2) RF ile tahmin yap
-        rf_probs = rf.predict_proba(X)
+        # 4) Tahmin yap (RF modeli ile)
+        rf_probs = rf.predict_proba(X_scaled)
         
-        # Tahmin sonuçlarını kontrol et
-        if rf_probs.shape[0] == 0 or rf_probs.shape[1] != len(labels):
-            raise ValueError(f"Tahmin olasılıkları boyutları uyumsuz: {rf_probs.shape}")
-            
-        pred_class_idx = rf_probs.argmax(1)
-        pred_class = labels[pred_class_idx[0]]
-        confidence = rf_probs[0, pred_class_idx[0]]
+        # 5) Sonuçları çıkar
+        pred_classes_idx = rf_probs.argmax(1)
+        pred_class = labels[pred_classes_idx[0]]
+        confidence = rf_probs[0, pred_classes_idx[0]]
         
-        # 3) Tüm sınıflar için olasılıkları hazırla
+        # 6) Tüm sınıf olasılıklarını hazırla
         class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
+        
         print(f"Tahmin: '{pred_class}', Güven: {confidence:.4f}")
+        print(f"Tüm sınıf olasılıkları: {class_probs}")
         
         return pred_class, confidence, class_probs
+        
     except Exception as e:
         error_msg = f"Tahmin yaparken hata oluştu: {str(e)}"
         print(error_msg)
         st.error(error_msg)
         
-        # Hata durumunda HATA olduğunu belirten bir yanıt döndür - artık varsayılan galaxy döndürmeyeceğiz
-        # Her sınıfa eşit olasılık ver (hatalı olduğunu belirtmek için)
+        # Hata durumunda varsayılan değer döndür
         dummy_probs = {label: 1.0/len(labels) for label in labels}
         return "HATA", 0.0, dummy_probs
 

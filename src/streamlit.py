@@ -182,152 +182,76 @@ if rf is not None and scaler is not None:
     # ---------------------------------------------------------
     # Koordinat ile arama
     # ---------------------------------------------------------
-    if input_method == "Koordinat ile Arama":
-        st.subheader("Koordinat ile Gök Cismi Ara")
-        
-        # Aladin Lite harita görüntüleyici
-        st.markdown("### Etkileşimli Gökyüzü Haritası")
-        st.markdown("Aşağıdaki haritada herhangi bir noktaya tıklayarak o koordinatları otomatik olarak seçebilirsiniz.")
-        
-        aladin_html = """
-        <div style="text-align: center; width: 100%;">
-            <div id="aladin-lite-div" style="height: 500px; width: 100%; border: 1px solid #ccc; border-radius: 5px; position: relative;"></div>
-            <div id="status-message" style="margin-top: 10px; padding: 5px; color: #555; font-style: italic; background-color: #f8f9fa; border-radius: 3px;">Harita yükleniyor...</div>
-        </div>
-        <script type="text/javascript">
-            // Aladin Lite haritayı yükle
-            document.addEventListener("DOMContentLoaded", function() {
-                if (typeof A === 'undefined') {
-                    var statusElem = document.getElementById('status-message');
-                    if (statusElem) statusElem.innerText = "Aladin Lite yüklenirken bekleyin...";
-                    
-                    var script = document.createElement('script');
-                    script.src = 'https://aladin.u-strasbg.fr/AladinLite/api/v2/latest/aladin.min.js';
-                    script.onload = initAladin;
-                    document.head.appendChild(script);
-                } else {
-                    initAladin();
-                }
-            });
+if input_method == "Koordinat ile Arama":
+    st.subheader("Koordinat ile Gök Cismi Ara")
 
-            function initAladin() {
-                var statusElem = document.getElementById('status-message');
-                if (statusElem) statusElem.innerText = "Gökyüzü haritası hazırlanıyor...";
-                
-                try {
-                    // Varsayılan görünüm (SDSS görüntüleri için uygun bir alan)
-                    var ra0 = 180.0;  // Sağ açıklık (RA)
-                    var dec0 = 0.0;   // Dik açıklık (Dec)
-                    
-                    var aladin = A.aladin('#aladin-lite-div', {
-                        survey: "P/SDSS9/color", 
-                        fov: 0.2,
-                        target: ra0 + " " + dec0,
-                        showLayersControl: true,
-                        showFullscreenControl: true,
-                        showFrame: true,
-                        showGotoControl: true
-                    });
-                    
-                    // Katalog katmanı ekle (tıklanabilir objeler için)
-                    var cat = A.catalog({name: 'Örnek Objeler'});
-                    aladin.addCatalog(cat);
-                    
-                    // Haritada tıklama olayını yakala
-                    aladin.on('objectClicked', function(object) {
-                        var ra = object.ra;
-                        var dec = object.dec;
-                        
-                        // Koordinatları güncellemek için Streamlit ile iletişim kur
-                        window.parent.postMessage({
-                            type: "streamlit:setComponentValue",
-                            value: {ra: ra, dec: dec}
-                        }, "*");
-                        
-                        if (statusElem) statusElem.innerText = "Seçilen koordinatlar: RA=" + ra.toFixed(6) + ", Dec=" + dec.toFixed(6);
-                    });
-                    
-                    if (statusElem) statusElem.innerText = "Harita hazır! Bir noktaya tıklayarak koordinatları seçebilirsiniz.";
-                    
-                } catch (error) {
-                    console.error("Aladin yüklenirken hata:", error);
-                    if (statusElem) statusElem.innerText = "Harita yüklenemedi: " + error.message;
-                }
-            }
-        </script>
-        """
-        
-        components.html(aladin_html, height=600)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            ra = st.number_input("Sağ Açıklık (RA)", min_value=0.0, max_value=360.0, value=180.0, format="%.6f")
-        with col2:
-            dec = st.number_input("Dik Açıklık (Dec)", min_value=-90.0, max_value=90.0, value=0.0, format="%.6f")
-        
-        search_radius = st.slider("Arama Yarıçapı (derece)", min_value=0.001, max_value=0.05, value=0.01, step=0.001, format="%.3f")
-        
-        if st.button("Ara ve Sınıflandır", key="search_coords"):
-            with st.spinner("SDSS'ten veriler alınıyor..."):
+    st.markdown("### Gökyüzü Haritası (Aladin Lite)")
+    st.markdown("Haritada gezinin, ardından koordinatları manuel girin.")
+
+    aladin_iframe = """
+    <iframe src="https://aladin.u-strasbg.fr/AladinLite/?target=180+0&fov=0.2&survey=P/SDSS9/color"
+            width="100%" height="500" style="border:1px solid #ccc; border-radius:5px;"></iframe>
+    """
+    components.html(aladin_iframe, height=520)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        ra = st.number_input("Sağ Açıklık (RA)", min_value=0.0, max_value=360.0, value=180.0, format="%.6f")
+    with col2:
+        dec = st.number_input("Dik Açıklık (Dec)", min_value=-90.0, max_value=90.0, value=0.0, format="%.6f")
+
+    search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")
+
+    if st.button("Ara ve Sınıflandır", key="search_coords_fixed"):
+        with st.spinner("SDSS'ten en yakın gök cismi aranıyor..."):
+          results_df = query_nearest_obj_via_sql(ra, dec, search_radius)
+
+
+        if results_df is not None and not results_df.empty:
+            st.success(f"{len(results_df)} gök cismi bulundu.")
+            st.dataframe(results_df)
+
+            closest_obj = results_df.iloc[0]
+            objid = closest_obj.get('objID') or closest_obj.get('objid')
+
+            with st.spinner("Detaylı SDSS verisi alınıyor..."):
+                detailed = get_sdss_object_by_id(objid)
+
+            if detailed:
                 try:
-                    # En yakın objeleri bul
-                    results_df = query_nearest_obj(ra, dec, search_radius)
-                    
-                    if results_df is not None and not results_df.empty:
-                        st.success(f"{len(results_df)} adet gök cismi bulundu!")
-                        
-                        # Sonuçları göster
-                        st.dataframe(results_df)
-                        
-                        # En yakın objeyi seç
-                        closest_obj = results_df.iloc[0]
-                        
-                        # Görüntüyü al
-                        with st.spinner("Gök cismi görüntüsü alınıyor..."):
-                            image = get_sdss_image(closest_obj['ra'], closest_obj['dec'])
-                            if image:
-                                st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)
-                        
-                        # Filtreleme verilerini hazırla
-                        try:
-                            sample = make_feature_vector(
-                                float(closest_obj['u']), 
-                                float(closest_obj['g']), 
-                                float(closest_obj['r']), 
-                                float(closest_obj['i']), 
-                                float(closest_obj['z'])
-                            )
-                            
-                            # Tahmini yap
-                            with st.spinner("Sınıflandırma yapılıyor..."):
-                                pred_class, confidence, class_probs = predict(sample, rf, scaler, labels)
-                                
-                                # Sonuçları göster
-                                st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
-                                st.markdown(f"**Güven Değeri:** {confidence:.4f}")
-                                
-                                # Açıklama ekle
-                                st.markdown(get_object_info_text(pred_class, confidence))
-                                
-                                # Grafik göster
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.pyplot(plot_predictions(pred_class, class_probs))
-                                with col2:
-                                    st.pyplot(display_confidence_gauge(confidence))
-                                
-                        except Exception as e:
-                            st.error(f"Sınıflandırma hatası: {str(e)}")
-                    else:
-                        st.warning(f"Belirtilen koordinatlarda ({ra}, {dec}) gök cismi bulunamadı. Lütfen farklı koordinatlar deneyin veya arama yarıçapını arttırın.")
+                    u, g, r, i_, z = map(float, [detailed["u"], detailed["g"], detailed["r"], detailed["i"], detailed["z"]])
+                    sample = make_feature_vector(u, g, r, i_, z)
+
+                    with st.spinner("SDSS görüntüsü alınıyor..."):
+                        image = get_sdss_image(closest_obj['ra'], closest_obj['dec'])
+                        if image:
+                            st.image(image, caption=f"RA: {closest_obj['ra']}, Dec: {closest_obj['dec']}", width=400)
+
+                    with st.spinner("Sınıflandırma yapılıyor..."):
+                        pred_class, confidence, class_probs = predict(sample, rf, scaler, labels)
+
+                        st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
+                        st.markdown(f"**Güven Değeri:** {confidence:.4f}")
+                        st.markdown(get_object_info_text(pred_class, confidence))
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.pyplot(plot_predictions(pred_class, class_probs))
+                        with col2:
+                            st.pyplot(display_confidence_gauge(confidence))
+
                 except Exception as e:
-                    st.error(f"Arama hatası: {str(e)}")
+                    st.error(f"Fotometrik veriler alınamadı veya dönüştürülemedi: {str(e)}")
+            else:
+                st.error("SDSS objesi bulundu ama detaylı veriler alınamadı. Belki taranmamış olabilir.")
+        else:
+            st.warning("Bu koordinatlarda SDSS verisi bulunamadı. Yarıçapı artırmayı veya başka bir bölgeyi deneyin.")
         
     # ---------------------------------------------------------
     # Manuel Filtreleme Değerleri
     # ---------------------------------------------------------
     elif input_method == "Manuel Filtreleme Değerleri":
-        st.subheader("Fotometrik Değerlerle Manuel Sınıflandırma")
+        st.subheader("Fotometrik Değerlerle Manuel Sınıflandırma")        
         st.markdown("""
         SDSS'in beş temel fotometrik filtreleme değerlerini (u, g, r, i, z) girerek sınıflandırma yapabilirsiniz.
         Değerleri kadir (magnitude) cinsinden giriniz.
@@ -343,19 +267,46 @@ if rf is not None and scaler is not None:
         with col3:
             z_mag = st.number_input("z filtresi (kadir)", min_value=10.0, max_value=30.0, value=16.2, format="%.4f")
         
-        if st.button("Sınıflandır", key="manual_classify"):            
+        st.markdown("### Ek SDSS Parametreleri (Opsiyonel)")
+        st.markdown("Bu parametreler model tarafından beklenmektedir. Bilmiyorsanız varsayılan değerleri kullanabilirsiniz.")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            plate = st.number_input("Plate ID", min_value=0, max_value=10000, value=1000)
+        with col2:
+            mjd = st.number_input("MJD (Modified Julian Date)", min_value=50000, max_value=60000, value=55000)
+        with col3:
+            fiberid = st.number_input("Fiber ID", min_value=0, max_value=1000, value=500)
+        with col4:
+            redshift = st.number_input("Redshift (z)", min_value=0.0, max_value=10.0, value=0.1, format="%.4f")
+        
+        if st.button("Sınıflandır", key="manual_classify"):
             try:
                 # Özellik vektörü oluştur
-                sample = make_feature_vector(u_mag, g_mag, r_mag, i_mag, z_mag)
-                
-                # Scaler formatını kontrol et
-                st.write(f"Debug - Özellik vektörü: şekil={sample.shape}, tip={type(sample)}")
-                
+                sample_df = make_feature_vector(
+                    u_mag, g_mag, r_mag, i_mag, z_mag,
+                    plate=plate, mjd=mjd, fiberid=fiberid, redshift=redshift
+                )
+
+                # Debug bilgisi
+                st.write(f"Debug - Oluşturulan DataFrame: şekil={sample_df.shape}, tip={type(sample_df)}")
+
                 # Tahmini yap
                 with st.spinner("Sınıflandırma yapılıyor..."):
-                    pred_class, confidence, class_probs = predict(sample, rf, scaler, labels)
+                    # preprocess_data ile CSV bölümünde kullanılan aynı yöntemi kullan
+                    X_scaled, _ = preprocess_data(sample_df, scaler, debug=True)
                     
-                    # Sonuçları göster
+                    if X_scaled is None:
+                        st.error("Veri ön işleme başarısız oldu.")
+                    else:
+                        # Model ile tahmin
+                        rf_probs = rf.predict_proba(X_scaled)
+                        pred_classes_idx = rf_probs.argmax(1)
+                        pred_class = labels[pred_classes_idx[0]]
+                        confidence = rf_probs[0, pred_classes_idx[0]]
+                        
+                        # Tüm sınıf olasılıklarını hazırla
+                        class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
+                      # Sonuçları göster
                     st.subheader(f"Sınıflandırma Sonucu: {pred_class}")
                     st.markdown(f"**Güven Değeri:** {confidence:.4f}")
                     
@@ -384,7 +335,7 @@ if rf is not None and scaler is not None:
                     
             except Exception as e:
                 st.error(f"Sınıflandırma hatası: {str(e)}")
-      # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # CSV Dosyası Yükleme
     # ---------------------------------------------------------
     elif input_method == "CSV Dosyası Yükleme":
@@ -548,21 +499,44 @@ if rf is not None and scaler is not None:
                 with st.spinner("Görüntü alınıyor..."):
                     image = get_sdss_image(example['ra'], example['dec'])
                     if image:
-                        st.image(image, caption=f"RA: {example['ra']}, Dec: {example['dec']}", width=400)
+                        st.image(image, caption=f"RA: {example['ra']}, Dec: {example['dec']}", width=400)                    
                     else:
                         st.warning("Görüntü alınamadı")
-            
+                        
             # Sınıflandırma yap
-            sample = make_feature_vector(
+            # Opsiyonel parametreleri örnek veri içinde varsa al, yoksa varsayılan değerleri kullan
+            plate_val = example.get('plate', 0)
+            mjd_val = example.get('mjd', 0)
+            fiberid_val = example.get('fiberid', 0)
+            redshift_val = example.get('redshift', 0)
+            
+            sample_df = make_feature_vector(
                 example['u'], 
                 example['g'], 
                 example['r'], 
                 example['i'], 
-                example['z']
+                example['z'],
+                plate=plate_val,
+                mjd=mjd_val,
+                fiberid=fiberid_val,
+                redshift=redshift_val
             )
             
             with st.spinner("Sınıflandırma yapılıyor..."):
-                pred_class, confidence, class_probs = predict(sample, rf, scaler, labels)
+                # preprocess_data ile CSV bölümünde kullanılan aynı yöntemi kullan
+                X_scaled, _ = preprocess_data(sample_df, scaler, debug=False)
+                
+                if X_scaled is None:
+                    st.error("Veri ön işleme başarısız oldu.")
+                else:
+                    # Model ile tahmin
+                    rf_probs = rf.predict_proba(X_scaled)
+                    pred_classes_idx = rf_probs.argmax(1)
+                    pred_class = labels[pred_classes_idx[0]]
+                    confidence = rf_probs[0, pred_classes_idx[0]]
+                    
+                    # Tüm sınıf olasılıklarını hazırla
+                    class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
                 
                 # Sonuçları göster
                 st.markdown("---")
