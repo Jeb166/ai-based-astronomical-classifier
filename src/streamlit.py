@@ -462,6 +462,11 @@ if rf is not None and scaler is not None:
                     radius_arcsec = search_radius * 3600        # derece → ″
                     row = get_sdss_object_by_coords(ra, dec,
                                                     radius_arcsec=radius_arcsec)
+                    if row is None:
+                        st.error("SkyServer yanıt vermedi veya bu koordinatta ugriz verisi yok. "
+                                "• İnternet/VPN engelini kontrol edin\n"
+                                "• Yarıçapı büyütüp yeniden deneyin")
+                        st.stop()
 
                 if row is None:
                     st.error("Bu koordinatlarda nesne bulunamadı; yarıçapı büyütmeyi deneyin.")

@@ -151,41 +151,31 @@ def get_spectra_link(obj_id):
         return None
 
 def sql_photoobj_cone_search(ra_deg, dec_deg,
-                             radius_arcsec=5,
+                             radius_arcsec=15,
                              dr=18, topn=1):
     """
-    (RA, Dec) çevresinde PhotoObj tablosuna konik arama (cone-search).
-    ugriz + opsiyonel psf/modelMag kolonları döndürür;
-    plate/mjd/fiberid PhotoObj’ta yok → sonradan 0 atanır.
+    SkyServerWS/SqlSearch  •  ugriz garanti  •  15 s timeout
     """
-    # -- Sadece PhotoObj’ta VAR olan sütunlar --
-    fields = [
-        "p.ra", "p.dec", "p.objid",
-        "p.u", "p.g", "p.r", "p.i", "p.z",
-        "p.psfMag_u", "p.psfMag_g", "p.psfMag_r",
-        "p.psfMag_i", "p.psfMag_z",
-        f"dbo.fDistanceEq({ra_deg},{dec_deg},p.ra,p.dec) AS dist_arcsec"
-    ]
+    cols = "ra,dec,u,g,r,i,z,objid"
+    sql = (
+        f"SELECT TOP {topn} {cols} "
+        f"FROM PhotoObj "
+        f"WHERE dbo.fDistanceEq({ra_deg},{dec_deg},ra,dec) < {radius_arcsec} "
+        f"ORDER BY dbo.fDistanceEq({ra_deg},{dec_deg},ra,dec)"
+    )
 
-    sql = f"""
-        SELECT TOP {topn}
-            {', '.join(fields)}
-        FROM PhotoObj AS p
-        WHERE dbo.fDistanceEq({ra_deg}, {dec_deg}, p.ra, p.dec) < {radius_arcsec}
-        ORDER BY dist_arcsec
-    """
-
-    tbl = SDSS.query_sql(sql, data_release=dr)
-    if tbl is None or len(tbl) == 0:
+    try:
+        row = _run_sql(sql, dr)      # pandas.Series  |  None
+    except Exception as e:
+        print("SQL cone-search hata:", e)
         return None
 
-    # Astropy Row ➜ pandas.Series
-    row = pd.Series({c: tbl[0][c] for c in tbl.colnames})
+    if row is None:
+        return None
 
-    # PhotoObj’ta olmayan kolonları 0 ile ekle
+    # PhotoObj’ta olmayan kolonlar
     for col in ("plate", "mjd", "fiberid", "redshift"):
         row[col] = 0
-
     return row
 
 
@@ -224,24 +214,33 @@ def get_sdss_object_by_coords(ra, dec,
     return None
 
 
-def _run_sql(sql: str, dr: int):
-    """SQL’i çalıştır, 500 dönerse None, veri dönerse pandas.Series."""
-    url = (f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/SearchTools/"
-           f"SqlSearch?format=json&cmd={ul.quote(sql)}")
-    r = requests.get(url, headers={"User-Agent": "sdss-fetcher"}, timeout=15)
+import requests, urllib.parse as ul, pandas as pd
 
-    if r.status_code == 500:          # Sunucu patladı → None
+def _run_sql(sql, dr=18, timeout=15):
+    """
+    SkyServerWS/SqlSearch?format=json…   •   pandas.Series | None
+    """
+    q = ul.quote_plus(sql)
+    url = (f"https://skyserver.sdss.org/dr{dr}/"
+           f"SkyServerWS/SearchTools/SqlSearch"
+           f"?cmd={q}&format=csv")
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+    except requests.exceptions.Timeout:
+        print("SkyServer timeout 👎")
         return None
-    r.raise_for_status()              # 4xx ise istisna fırlat
+    except requests.HTTPError as e:
+        print("SkyServer HTTP hata:", e)
+        return None
 
-    js = r.json()
-    # -- üç olası yapı --
-    if isinstance(js, list) and js:
-        return pd.Series(js[0])
-    if isinstance(js, dict):
-        if js.get("Rows"):  return pd.Series(js["Rows"][0])
-        if js.get("data"):  return pd.Series(js["data"][0])
-    return None
+    # İlk satır başlık — ikinci satır veri
+    from io import StringIO
+    import pandas as pd
+    df = pd.read_csv(StringIO(r.text))
+    if df.empty:
+        return None
+    return df.iloc[0]          # pandas.Series
 
 def get_sdss_object_by_objid(objid: int | str, dr: int = 18):
     """
