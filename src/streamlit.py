@@ -2,6 +2,15 @@
 # -*- coding: utf-8 -*-
 
 import streamlit as st
+
+# UI başlığı ve açıklaması - En başta olmalı
+st.set_page_config(
+    page_title="Astronomik Sınıflandırıcı",
+    page_icon="🔭",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,6 +24,24 @@ import urllib.parse as ul
 import requests
 import os
 import time
+from prediction import get_sdss_object_by_objid
+
+# Add styling after page config
+page_bg_img = '''
+<style>
+body {
+    background-image: url("https://www.example.com/background.jpg");
+    background-size: cover;
+    background-attachment: fixed;
+    color: #ffffff;
+}
+.sidebar .sidebar-content {
+    background: rgba(0, 0, 0, 0.7);
+    color: #ffffff;
+}
+</style>
+'''
+st.markdown(page_bg_img, unsafe_allow_html=True)
 
 # Model işlevlerini ve tahmin işlevlerini içe aktar
 from prediction import (
@@ -273,18 +300,15 @@ def query_nearest_obj(ra, dec, radius=0.01):
     return None
 
 # UI başlığı ve açıklaması
-st.set_page_config(
-    page_title="Astronomik Sınıflandırıcı",
-    page_icon="🔭",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-st.title("Random Forest Tabanlı Astronomik Gök Cismi Sınıflandırıcı")
+st.title("🌌 AI Tabanlı Astronomik Gök Cismi Sınıflandırıcı")
 st.markdown("""
-Bu uygulama, Random Forest algoritması kullanarak astronomik gök cisimlerini sınıflandırır. 
-SDSS verilerini kullanarak galaksi, kuasar ve yıldız tespiti yapabilirsiniz.
-""")
+<div style="background-color:rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 5px;">
+    <p style="font-size: 18px; color: #ffffff;">
+        Bu uygulama, Random Forest algoritması kullanarak astronomik gök cisimlerini sınıflandırır. 
+        SDSS verilerini kullanarak galaksi, kuasar ve yıldız tespiti yapabilirsiniz.
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
 # Ana UI yapısı

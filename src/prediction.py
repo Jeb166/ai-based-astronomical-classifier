@@ -222,38 +222,45 @@ def get_sdss_object_by_coords(ra, dec, radius=5.0):
         print(f"SDSS veri çekilirken hata: {str(e)}")
         return None
 
-def get_sdss_object_by_objid(objid, dr=18):
-    """
-    Tek bir objID için u,g,r,i,z + plate,mjd,fiberid,redshift alanlarını çeker.
-    API’nin liste, sözlük‐“Rows” veya “data” formatlarını da kabul eder.
-    """
-    import urllib.parse as ul, requests, json
+import urllib.parse as ul, requests, pandas as pd
 
-    sql = (
-        "SELECT TOP 1 ra,dec,u,g,r,i,z,"
-        "plate,mjd,fiberid,redshift "
-        f"FROM PhotoObjAll WHERE objid = {objid}"
-    )
-    url = (
-        f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/"
-        f"SearchTools/SqlSearch?format=json&cmd={ul.quote(sql)}"
-    )
-
+def _run_sql(sql: str, dr: int):
+    """SQL’i çalıştır, 500 dönerse None, veri dönerse pandas.Series."""
+    url = (f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/SearchTools/"
+           f"SqlSearch?format=json&cmd={ul.quote(sql)}")
     r = requests.get(url, headers={"User-Agent": "sdss-fetcher"}, timeout=15)
-    r.raise_for_status()
+
+    if r.status_code == 500:          # Sunucu patladı → None
+        return None
+    r.raise_for_status()              # 4xx ise istisna fırlat
+
     js = r.json()
-
-    # --- 3 olası yapı ---
+    # -- üç olası yapı --
+    if isinstance(js, list) and js:
+        return pd.Series(js[0])
     if isinstance(js, dict):
-        if js.get("Rows"):                    # { "Rows": [ {...} ] }
-            return js["Rows"][0]
-        if js.get("data"):                    # { "data": [ {...} ] }
-            return js["data"][0]
-    elif isinstance(js, list) and js:         # [ {...} ]
-        return js[0]
-
-    print("DEBUG-js-empty:", json.dumps(js)[:300])
+        if js.get("Rows"):  return pd.Series(js["Rows"][0])
+        if js.get("data"):  return pd.Series(js["data"][0])
     return None
+
+def get_sdss_object_by_objid(objid: int | str, dr: int = 18):
+    """
+    Tek bir objID için u,g,r,i,z, plate, mjd, fiberid, redshift sütunlarını döndürür.
+    1) PhotoObj görünümü    – hızlı
+    2) PhotoObjAll tablosu  – yavaş ama tam
+    Başarısızsa None.
+    """
+    objid = int(objid)
+
+    sql_view = (f"SELECT TOP 1 ra,dec,u,g,r,i,z,plate,mjd,fiberid,redshift "
+                f"FROM PhotoObj WHERE objid={objid}")
+    row = _run_sql(sql_view, dr)
+    if row is not None:
+        return row
+
+    sql_all  = (f"SELECT TOP 1 ra,dec,u,g,r,i,z,plate,mjd,fiberid,redshift "
+                f"FROM PhotoObjAll WHERE objid={objid}")
+    return _run_sql(sql_all, dr)
 
 def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
     """SDSS'ten verilen koordinatlar için gökyüzü görüntüsünü çeker"""

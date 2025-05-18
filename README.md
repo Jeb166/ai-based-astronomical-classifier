@@ -4,6 +4,21 @@ Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflan
 
 ## Kurulum ve Çalıştırma
 
+### Veri Setini İndirme
+
+1. Veri setini indirmek için aşağıdaki Google Drive bağlantısını kullanın:
+```
+[Veri Seti İndirme Bağlantısı] 
+https://drive.google.com/drive/folders/YOUR_FOLDER_ID
+```
+
+2. İndirilen veri dosyalarını `data/` klasörüne yerleştirin:
+   - `skyserver.csv` (Ana veri seti)
+   - `skyserver_test_data.csv` (Test veri seti)
+   - `skyserver_199k_66-66-66.csv` (Dengeli veri seti)
+   - `skyserver_200k_50-40-10.csv` (Gerçek dağılıma yakın veri seti)
+   - `skyserver_99k_33-33-33.csv` (Küçük dengeli veri seti)
+
 ### Yerel Bilgisayarda Kurulum
 
 1. Depoyu klonlayın:
