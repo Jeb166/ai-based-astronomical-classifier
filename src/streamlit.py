@@ -296,7 +296,7 @@ st.sidebar.markdown("SDSS veri tabanını kullanarak gök cismi sınıflandırma
 # Giriş metodu seçimi
 input_method = st.sidebar.radio(
     "Giriş metodu seçin:",
-    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme", "Örnek Veriler"]
+    ["Koordinat ile Arama", "Manuel Filtreleme Değerleri", "CSV Dosyası Yükleme"]
 )
 
 # Modeli yükle
@@ -531,132 +531,9 @@ if rf is not None and scaler is not None:
                                 st.error(f"Sınıflandırma sırasında hata oluştu: {str(e)}")
                 else:
                     missing = [col for col in required_cols if col not in df.columns]
-                    st.error(f"CSV dosyasında gerekli sütunlar eksik: {', '.join(missing)}")
+                    st.error(f"CSV dosyasında gerekli sütunlar eksik: {', '.join(missing)}")            
             except Exception as e:
-                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")# ---------------------------------------------------------
-    # Örnek Veriler
-    # ---------------------------------------------------------
-    elif input_method == "Örnek Veriler":
-        st.subheader("Örnek Gök Cisimleri ile Test Et")
-        st.markdown("""
-        Test etmek için aşağıdaki örnek gök cisimlerinden birini seçin.
-        Bu örnekler, modelleri test etmek için kullanılan SDSS veri setinden alınmıştır.
-        """)
-        
-        # Örnek objeler
-        examples = {
-            "Galaksi Örneği": {
-                "u": 19.149, "g": 18.090, "r": 17.595, "i": 17.272, "z": 17.146,
-                "class": "GALAXY", "ra": 344.544, "dec": -0.245
-            },
-            "Kuasar (QSO) Örneği": {
-                "u": 19.238, "g": 19.027, "r": 18.692, "i": 18.584, "z": 18.269,
-                "class": "QSO", "ra": 333.384, "dec": 2.390
-            },
-            "Yıldız Örneği": {
-                "u": 17.426, "g": 16.233, "r": 15.684, "i": 15.444, "z": 15.332,
-                "class": "STAR", "ra": 249.170, "dec": 22.276
-            },
-            "Belirsiz Örnek (Zorlayıcı)": {
-                "u": 20.547, "g": 19.801, "r": 19.519, "i": 19.064, "z": 18.969,
-                "class": "QSO", "ra": 321.650, "dec": 10.121
-            }
-        }
-        
-        selected_example = st.selectbox("Örnek seç", list(examples.keys()))
-        
-        if st.button("Seçilen Örneği Sınıflandır", key="classify_example"):
-            example = examples[selected_example]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### Gök Cismi Bilgileri")
-                st.write(f"**Sağ Açıklık (RA):** {example['ra']}")
-                st.write(f"**Dik açıklık (Dec):** {example['dec']}")
-                st.write(f"**Gerçek Sınıf:** {example['class']}")
-                
-                # Filtreleme değerlerini göster
-                st.markdown("### Fotometrik Değerler (Magnitude)")
-                col_a, col_b, col_c, col_d, col_e = st.columns(5)
-                col_a.metric("u", f"{example['u']:.3f}")
-                col_b.metric("g", f"{example['g']:.3f}")
-                col_c.metric("r", f"{example['r']:.3f}")
-                col_d.metric("i", f"{example['i']:.3f}")
-                col_e.metric("z", f"{example['z']:.3f}")
-                
-                # Renk indekslerini göster
-                st.markdown("### Renk İndeksleri")
-                col_a, col_b, col_c, col_d = st.columns(4)
-                col_a.metric("u - g", f"{(example['u'] - example['g']):.2f}")
-                col_b.metric("g - r", f"{(example['g'] - example['r']):.2f}")
-                col_c.metric("r - i", f"{(example['r'] - example['i']):.2f}")
-                col_d.metric("i - z", f"{(example['i'] - example['z']):.2f}")
-            
-            with col2:
-                # SDSS görüntüsünü göster
-                st.markdown("### SDSS Görüntüsü")
-                with st.spinner("Görüntü alınıyor..."):
-                    image = get_sdss_image(example['ra'], example['dec'])
-                    if image:
-                        st.image(image, caption=f"RA: {example['ra']}, Dec: {example['dec']}", width=400)                    
-                    else:
-                        st.warning("Görüntü alınamadı")
-                        
-            # Sınıflandırma yap
-            # Opsiyonel parametreleri örnek veri içinde varsa al, yoksa varsayılan değerleri kullan
-            plate_val = example.get('plate', 0)
-            mjd_val = example.get('mjd', 0)
-            fiberid_val = example.get('fiberid', 0)
-            redshift_val = example.get('redshift', 0)
-            
-            sample_df = make_feature_vector(
-                example['u'], 
-                example['g'], 
-                example['r'], 
-                example['i'], 
-                example['z'],
-                plate=plate_val,
-                mjd=mjd_val,
-                fiberid=fiberid_val,
-                redshift=redshift_val
-            )
-            
-            with st.spinner("Sınıflandırma yapılıyor..."):
-                # preprocess_data ile CSV bölümünde kullanılan aynı yöntemi kullan
-                X_scaled, _ = preprocess_data(sample_df, scaler, debug=False)
-                
-                if X_scaled is None:
-                    st.error("Veri ön işleme başarısız oldu.")
-                else:
-                    # Model ile tahmin
-                    rf_probs = rf.predict_proba(X_scaled)
-                    pred_classes_idx = rf_probs.argmax(1)
-                    pred_class = labels[pred_classes_idx[0]]
-                    confidence = rf_probs[0, pred_classes_idx[0]]
-                    
-                    # Tüm sınıf olasılıklarını hazırla
-                    class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
-                
-                # Sonuçları göster
-                st.markdown("---")
-                st.subheader("Sınıflandırma Sonucu")
-                
-                # Sonuç ile gerçek değeri karşılaştır
-                accuracy = "✓ Doğru" if pred_class == example['class'] else "✗ Yanlış"
-                accuracy_color = "green" if pred_class == example['class'] else "red"
-                
-                st.markdown(f"**Tahmin:** {pred_class} &nbsp; **Gerçek:** {example['class']} &nbsp; **Sonuç:** <span style='color:{accuracy_color}'>{accuracy}</span>", unsafe_allow_html=True)
-                st.markdown(f"**Güven Değeri:** {confidence:.4f}")
-                
-                # Açıklama ekle
-                st.markdown(get_object_info_text(pred_class, confidence))
-                
-                # Grafik göster
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.pyplot(plot_predictions(pred_class, class_probs))
-                with col2:
-                    st.pyplot(display_confidence_gauge(confidence))
+                st.error(f"CSV dosyası işlenirken hata oluştu: {str(e)}")
 else:
     st.error("Random Forest modeli yüklenemedi. Lütfen model dosyalarını kontrol edin.")
 
