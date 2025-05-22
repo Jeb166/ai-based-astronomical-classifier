@@ -24,7 +24,7 @@ import urllib.parse as ul
 import requests
 import os
 import time
-from prediction import get_sdss_object_by_objid
+from prediction import get_sdss_by_objid
 
 # Add styling after page config
 page_bg_img = '''
@@ -359,7 +359,7 @@ if rf is not None and scaler is not None:
         
         st.subheader("Gökyüzü Haritası ile Gök Cismi Ara")        
         st.markdown("##### SDSS DR18 Navigasyon Aracı")
-        st.markdown("SDSS'in Aladin Sky Atlas kullanan navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")          
+        st.markdown("SDSS'in Aladin Sky Atlas kullanan navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")
         sdss_iframe = """
         <iframe id="naviframe" scrolling="yes" allow="clipboard-write" 
                 style="width: 100%; height: 750px; overflow: visible; border:1px solid #ccc; border-radius:5px; background-color: #fff;" 
@@ -379,59 +379,59 @@ if rf is not None and scaler is not None:
                     st.warning("Lütfen bir ObjID girin.")
                     st.stop()
 
-                with st.spinner("SDSS’ten veri çekiliyor..."):
-                    try:
-                        row = None
-                        for dr in (18, 17, 16):
-                            st.write(f"ObjID sorgulanıyor, DR={dr}")
-                            try:
-                                # get_sdss_object_by_objid içinde kullanılan istek URL'sini de görmek için debug
-                                st.write("Sorgu yapılacak URL: <fonksiyondan_alınan_url>")  # Örnek debug
-                                data = get_sdss_object_by_objid(objid_input.strip(), dr=dr)
-                                st.write(f"DR={dr} için fonksiyon döndürdüğü veri: {data}")
-                                if data is not None:
-                                    row = data
-                                    st.write(f"Veri bulundu: {row}")
-                                    break
-                                else:
-                                    st.warning(f"Bu DR={dr} için kayıt bulunamadı. ObjID, DR={dr} kapsamı dışında olabilir.")
-                            except Exception as e:
-                                st.error(f"DR{dr} sorgusu hata verdi: {e}")
-                    except Exception as e:
-                        st.error(f"SDSS servisine bağlanılamadı: {e}")
-                        st.stop()
+                # Farklı SDSS DR sürümlerini dene
+                with st.spinner("SDSS'ten veri çekiliyor..."):
+                    row = None
+                    for dr in (18, 17, 16):
+                        st.write(f"ObjID sorgulanıyor, DR={dr}")
+                        try:
+                            data = get_sdss_by_objid(objid_input.strip(), dr=dr)
+                            if data:
+                                row = data
+                                st.success(f"DR{dr} veritabanında bulundu!")
+                                break
+                        except Exception as e:
+                            st.warning(f"DR{dr} veritabanı sorgusu başarısız: {str(e)}")
+                            continue
 
                 if row is None:
-                    st.error("Bu ObjID için hiçbir DR sürümünde kayıt bulunamadı. ObjID’nin geçerli olduğundan emin olun veya farklı bir örnek deneyin.")
+                    st.error("Bu ObjID için hiçbir DR sürümünde kayıt bulunamadı. ObjID'nin geçerli olduğundan emin olun veya farklı bir örnek deneyin.")
                     st.stop()
 
-                # 2-c) Feature-vector oluştur
-                u_  = pick_band(row, "u")
-                g_  = pick_band(row, "g")
-                r_  = pick_band(row, "r")
-                i_  = pick_band(row, "i")
-                z_  = pick_band(row, "z")
+                # Elde edilen verileri göster
+                if debug_mode:
+                    st.subheader("Bulunan Veri")
+                    st.write(row)
 
-                missing = [b for b,v in zip("ugriz", (u_,g_,r_,i_,z_)) if v is None]
-                if missing:
-                    st.error(f"Bu nesnede fotometrik veri eksik ({', '.join(missing)} bandı yok). "
-                            "Yarıçapı büyütüp farklı bir nesne deneyin.")
-                    st.stop()
-
-                fv = make_feature_vector(
+                # Özellik vektörü oluştur
+                with st.spinner("Özellik vektörü oluşturuluyor..."):
+                    # Değerleri al
+                    u_  = float(row.get("u", 0))
+                    g_  = float(row.get("g", 0))
+                    r_  = float(row.get("r", 0))
+                    i_  = float(row.get("i", 0))
+                    z_  = float(row.get("z_mag", 0))
+                    
+                    # Verilerin var olduğunu kontrol et
+                    missing = [b for b,v in zip("ugriz", (u_,g_,r_,i_,z_)) if v == 0]
+                    if missing:
+                        st.error(f"Fotometrik veri eksik: {', '.join(missing)} band(lar)ı yok. Farklı bir ObjID deneyin.")
+                        st.stop()
+                    
+                    fv = make_feature_vector(
                         u_, g_, r_, i_, z_,
-                        plate   = row.get("plate",   0),
-                        mjd     = row.get("mjd",     0),
+                        plate   = row.get("plate", 0),
+                        mjd     = row.get("mjd", 0),
                         fiberid = row.get("fiberid", 0),
-                        redshift= row.get("redshift",0)
-                )
-
+                        redshift= row.get("redshift", 0)
+                    )
 
                 # Ölçekle + tahmin et
-                X_scaled, _ = preprocess_data(fv, scaler)
-                pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
+                with st.spinner("Gök cismi sınıflandırılıyor..."):
+                    X_scaled, _ = preprocess_data(fv, scaler, debug=debug_mode)
+                    pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
 
-                # === Sonuçları göster ===
+                # Sonuçları göster
                 st.success(f"Tahmin: **{pred_class}**  —  Güven: **{confidence:.3f}**")
                 st.markdown(get_object_info_text(pred_class, confidence))
 
@@ -439,12 +439,21 @@ if rf is not None and scaler is not None:
                 col1.pyplot(plot_predictions(pred_class, class_probs))
                 col2.pyplot(display_confidence_gauge(confidence))
 
-                # İsteğe bağlı: gökyüzü görüntüsü
-                img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
-                if img:
-                    st.image(img, caption="SDSS kesiti")
+                # SDSS görüntüsü - objid'den gelen row'da ra/dec değerleri yoksa
+                if "ra" in row and "dec" in row:
+                    img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
+                    if img:
+                        st.image(img, caption="SDSS kesiti")
                 else:
-                    st.warning("Lütfen bir ObjID girin.")
+                    st.warning("Bu ObjID için görüntü alınamadı. Koordinat (RA/Dec) bilgisi bulunmuyor.")
+                    
+                # Nesne ID detaylarını göster
+                with st.expander("Nesne Detayları"):
+                    st.write(f"**ObjID:** {row.get('objid', objid_input)}")
+                    if "plate" in row and row.get("plate") and "mjd" in row and row.get("mjd") and "fiberid" in row and row.get("fiberid"):
+                        spectra_link = get_spectra_link(row)
+                        if spectra_link:
+                            st.write(f"**Spektrum:** [SDSS Spektrum Görüntüleyici]({spectra_link})")
 
         with tab2:
             st.markdown("### Koordinat ile Gök Cismi Ara")

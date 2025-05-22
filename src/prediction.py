@@ -142,6 +142,82 @@ def predict(sample_array, rf, scaler, labels):
 # ---------------------------------------------------------------------
 # SDSS Veri Çekme İşlevleri
 # ---------------------------------------------------------------------
+
+def get_sdss_by_objid(objid: int, dr: int = 18, timeout: int = 60) -> dict:
+    base_url = f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/SearchTools/SqlSearch"
+
+    # Objid'yi string olarak işleyen SQL sorgusu
+    sql = f"""
+        SELECT TOP 1
+            CAST(p.objid AS VARCHAR(20)) AS objid,  
+            p.u AS u, p.g AS g, p.r AS r, p.i AS i, p.z AS z_mag,
+            s.plate AS plate, s.mjd AS mjd, s.fiberid AS fiberid,
+            s.z AS redshift
+        FROM PhotoObjAll AS p
+        LEFT JOIN SpecObjAll AS s
+               ON p.objid = s.bestobjid
+        WHERE p.objid = {int(objid)}
+    """
+
+    # HTTP GET çağrısı
+    params = {"cmd": sql, "format": "json"}
+    resp = requests.get(base_url, params=params, timeout=timeout)
+    resp.raise_for_status()
+    
+    # Debug bilgisi ekleyin
+    print(f"API yanıt durum kodu: {resp.status_code}")
+    print(f"API yanıt içeriği: {resp.text[:200]}...")  # İlk 200 karakteri göster
+    
+    data = resp.json()
+    
+    # Yanıt yapısını kontrol et
+    if not data or len(data) == 0:
+        raise ValueError(f"Objid {objid} için yanıt boş.")
+        
+    # TableName ve Rows anahtarları var mı kontrol et
+    if "Rows" in data[0]:
+        rows = data[0]["Rows"]
+        if not rows:
+            raise ValueError(f"Objid {objid} için kayıt bulunamadı.")
+        row = rows[0]  # İlk satırı al
+    else:
+        # Eski API formatı (doğrudan dizi)
+        if not data:
+            raise ValueError(f"Objid {objid} için kayıt bulunamadı.")
+        row = data[0]
+    
+    # Mevcut anahtarları yazdır
+    print(f"API yanıt anahtarları: {list(row.keys())}")
+    
+    try:
+        return {
+            "objid":    str(row.get("objid", objid)),  # String olarak al
+            "u":        float(row.get("u", 0)),
+            "g":        float(row.get("g", 0)),
+            "r":        float(row.get("r", 0)),
+            "i":        float(row.get("i", 0)),
+            "z_mag":    float(row.get("z_mag", 0)),
+            "plate":    row.get("plate"),
+            "mjd":      row.get("mjd"),
+            "fiberid":  row.get("fiberid"),
+            "redshift": row.get("redshift")
+        }
+    except KeyError as e:
+        print(f"API yanıt anahtarı bulunamadı: {e}")
+        print(f"Mevcut anahtarlar: {row.keys()}")
+        return {
+            "objid":    str(objid),
+            "u":        0.0,
+            "g":        0.0,
+            "r":        0.0,
+            "i":        0.0,
+            "z_mag":    0.0,
+            "plate":    None,
+            "mjd":      None,
+            "fiberid":  None,
+            "redshift": None
+        }
+
 def get_spectra_link(obj_id):
     """SDSS'ten verilen obj_id için spektrum bağlantısını alır"""
     try:
@@ -241,25 +317,6 @@ def _run_sql(sql, dr=18, timeout=15):
     if df.empty:
         return None
     return df.iloc[0]          # pandas.Series
-
-def get_sdss_object_by_objid(objid: int | str, dr: int = 18):
-    """
-    Tek bir objID için u,g,r,i,z, plate, mjd, fiberid, redshift sütunlarını döndürür.
-    1) PhotoObj görünümü    – hızlı
-    2) PhotoObjAll tablosu  – yavaş ama tam
-    Başarısızsa None.
-    """
-    objid = int(objid)
-
-    sql_view = (f"SELECT TOP 1 ra,dec,u,g,r,i,z,plate,mjd,fiberid,redshift "
-                f"FROM PhotoObj WHERE objid={objid}")
-    row = _run_sql(sql_view, dr)
-    if row is not None:
-        return row
-
-    sql_all  = (f"SELECT TOP 1 ra,dec,u,g,r,i,z,plate,mjd,fiberid,redshift "
-                f"FROM PhotoObjAll WHERE objid={objid}")
-    return _run_sql(sql_all, dr)
 
 def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
     """SDSS'ten verilen koordinatlar için gökyüzü görüntüsünü çeker"""
