@@ -46,7 +46,7 @@ st.markdown(page_bg_img, unsafe_allow_html=True)
 
 # Model işlevlerini ve tahmin işlevlerini içe aktar
 from prediction import (
-    load_models, predict, get_sdss_image, get_sdss_object_by_coords,
+    load_models, predict, get_sdss_object_by_coords,
     make_feature_vector, plot_predictions, display_confidence_gauge, 
     get_object_info_text, get_spectra_link
 )
@@ -506,71 +506,100 @@ if rf is not None and scaler is not None:
             search_radius = st.slider("Arama Yarıçapı (derece)", 0.001, 0.05, 0.01, step=0.001, format="%.3f")
 
             if st.button("Koordinatlar ile Ara ve Sınıflandır", key="coord_search"):
-                with st.spinner("SDSS’ten veri çekiliyor…"):
-                    # 2-a) Koordinata en yakın nesneyi çek
-                    radius_arcsec = search_radius * 3600        # derece → ″
-                    row = get_sdss_object_by_coords(ra, dec,
-                                                    radius_arcsec=radius_arcsec)
+                with st.spinner("SDSS'ten veri çekiliyor..."):
+                    # 1) Koordinata en yakın nesneyi çek
+                    radius_arcsec = search_radius * 3600  # derece → açı saniyesi
+                    row = get_sdss_object_by_coords(ra, dec, radius_arcsec=radius_arcsec)
+                    
                     if row is None:
-                        st.error("SkyServer yanıt vermedi veya bu koordinatta ugriz verisi yok. "
-                                "• İnternet/VPN engelini kontrol edin\n"
-                                "• Yarıçapı büyütüp yeniden deneyin")
+                        st.error("Bu koordinatlarda nesne bulunamadı. Arama yarıçapını artırmayı deneyin veya farklı koordinatlar girin.")
                         st.stop()
-
-                if row is None:
-                    st.error("Bu koordinatlarda nesne bulunamadı; yarıçapı büyütmeyi deneyin.")
-                    st.stop()
-
-                # 2-b) Astropy Row → pandas.Series
-                import pandas as pd
-
-                if debug_mode:                # Sidebar’daki "Debug modu" kutusu açıkken
-                    st.write("Gelen satır:", row)
+                
+                # 2) Debug modunda bilgileri göster
+                if debug_mode:
+                    st.subheader("Bulunan Veri")
+                    st.write(row)
                     if isinstance(row, pd.Series):
                         st.write("Sütun adları:", row.index.tolist())
-                    else:   # astropy Row
+                    else:  # astropy Row olabilir
                         st.write("Sütun adları:", row.colnames)
-
-                 # 2-c) Feature-vector oluştur
-                u_  = pick_band(row, "u")
-                g_  = pick_band(row, "g")
-                r_  = pick_band(row, "r")
-                i_  = pick_band(row, "i")
-                z_  = pick_band(row, "z")
-
-                missing = [b for b,v in zip("ugriz", (u_,g_,r_,i_,z_)) if v is None]
-                if missing:
-                    st.error(f"Fotometrik veri eksik: {', '.join(missing)} band(lar)ı yok.\n"
-                            "• Aynı koordinatta farklı objeler olabilir.\n"
-                            "• Yarıçapı büyütüp başka bir nesne seçin **ya da** u/g/r/i/z "
-                            "alanı içeren PhotoObj kaydını SQL ile çağırın.")
-                    st.stop()
-
-                fv = make_feature_vector(
+                
+                # 3) Spektroskopik veri kontrolü
+                has_spectro = row.get("plate") is not None and row.get("mjd") is not None and row.get("fiberid") is not None and row.get("redshift") is not None
+                spectro_none = all(row.get(col) is None for col in ["plate", "mjd", "fiberid", "redshift"])
+                
+                if not has_spectro or spectro_none:
+                    st.warning("""
+                    ⚠️ **Spektroskopik Veri Eksik**
+                    
+                    Bu nesne için spektroskopik veriler (plate, mjd, fiberid, redshift) mevcut değil. 
+                    Bu durum normal olup, SDSS'in tüm nesneler için spektroskopik gözlem yapmadığını gösterir.
+                    
+                    Tahmin sadece fotometrik verilere (u,g,r,i,z) dayanacak ve sonuçlar daha az kesin olabilir.
+                    """)
+                
+                # 4) Fotometrik değerleri al
+                with st.spinner("Özellik vektörü oluşturuluyor..."):
+                    u_ = pick_band(row, "u")
+                    g_ = pick_band(row, "g")
+                    r_ = pick_band(row, "r")
+                    i_ = pick_band(row, "i")
+                    z_ = pick_band(row, "z")
+                    
+                    # Eksik fotometrik değerleri kontrol et
+                    missing = [b for b, v in zip("ugriz", (u_, g_, r_, i_, z_)) if v is None]
+                    if missing:
+                        st.error(f"Fotometrik veri eksik: {', '.join(missing)} bandları yok. Farklı bir koordinat deneyin.")
+                        st.stop()
+                    
+                    # Debug modunda fotometrik değerleri göster
+                    if debug_mode:
+                        st.write("Fotometrik değerler:", f"u={u_}, g={g_}, r={r_}, i={i_}, z={z_}")
+                        st.write("Spektroskopik değerler:", f"plate={row.get('plate', 0)}, mjd={row.get('mjd', 0)}, fiberid={row.get('fiberid', 0)}, redshift={row.get('redshift', 0)}")
+                    
+                    # Özellik vektörü oluştur
+                    fv = make_feature_vector(
                         u_, g_, r_, i_, z_,
-                        plate   = row.get("plate",   0),
-                        mjd     = row.get("mjd",     0),
-                        fiberid = row.get("fiberid", 0),
-                        redshift= row.get("redshift",0)
-                )
-
-
-                # 2-d) Ölçekle + tahmin et
-                X_scaled, _ = preprocess_data(fv, scaler)
-                pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
-
-                # 2-e) Sonuçları göster
+                        plate=row.get("plate", 0),
+                        mjd=row.get("mjd", 0),
+                        fiberid=row.get("fiberid", 0),
+                        redshift=row.get("redshift", 0)
+                    )
+                
+                # 5) Tahmin yap
+                with st.spinner("Gök cismi sınıflandırılıyor..."):
+                    X_scaled, _ = preprocess_data(fv, scaler, debug=debug_mode)
+                    
+                    # predict() fonksiyonu kullanarak tahmin yap
+                    pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
+                
+                # 6) Sonuçları göster
                 st.success(f"Tahmin: **{pred_class}**  —  Güven: **{confidence:.3f}**")
                 st.markdown(get_object_info_text(pred_class, confidence))
-
+                
+                # 7) Tahmin grafiklerini göster
                 col1, col2 = st.columns(2)
                 col1.pyplot(plot_predictions(pred_class, class_probs))
                 col2.pyplot(display_confidence_gauge(confidence))
-
-                # 2-f) SDSS görüntüsü
-                img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
-                if img:
-                    st.image(img, caption="SDSS kesiti")
+                
+                # 8) SDSS görüntüsünü göster
+                with st.spinner("SDSS görüntüsü alınıyor..."):
+                    img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
+                    if img:
+                        st.image(img, caption="SDSS kesiti")
+                    else:
+                        st.warning("Bu koordinatlar için SDSS görüntüsü alınamadı.")
+                
+                # 9) Nesne detaylarını göster
+                with st.expander("Nesne Detayları"):
+                    st.write(f"**RA:** {row.get('ra')}")
+                    st.write(f"**Dec:** {row.get('dec')}")
+                    if "objid" in row:
+                        st.write(f"**ObjID:** {row.get('objid')}")
+                    if has_spectro:
+                        spectra_link = get_spectra_link(row)
+                        if spectra_link:
+                            st.write(f"**Spektrum:** [SDSS Spektrum Görüntüleyici]({spectra_link})")
 
                 
     # ---------------------------------------------------------

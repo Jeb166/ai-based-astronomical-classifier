@@ -336,148 +336,126 @@ def sql_photoobj_cone_search(ra_deg, dec_deg,
     return row
 
 
-# -------------------------------------------------
-# YENİ: ugriz garantili koordinat sorgusu
-# -------------------------------------------------
-def get_sdss_object_by_coords(ra, dec,
-                              radius_arcsec=15,
-                              dr=18):
+def get_sdss_object_by_coords(ra: float, dec: float, radius_arcsec: float = 15, dr: int = 18, timeout: int = 60) -> dict:
     """
-    1) PhotoObj SQL cone-search ⇒ ugriz + psf/modelMag + plate/mjd
-    2) (Opsiyonel) Astroquery spectro yedeği
-    radius_arcsec: yay-saniye (15″ ≈ 0.0042°)  
+    Verilen koordinatlara (RA, DEC) yakın gök cisimlerini sorgular ve en yakınını döndürür.
+    
+    Parameters:
+        ra (float): Sağ açıklık (derece)
+        dec (float): Dik açıklık (derece)
+        radius_arcsec (float): Arama yarıçapı (yay saniyesi, 15″ ≈ 0.0042°)
+        dr (int): SDSS veri sürümü (18, 17, vb.)
+        timeout (int): İstek zaman aşımı süresi (saniye)
+        
+    Returns:
+        dict: Bulunan gök cisminin verileri veya None
     """
-    # 1) SQL cone-search (ugriz her zaman var)
-    row = sql_photoobj_cone_search(ra, dec,
-                                   radius_arcsec=radius_arcsec,
-                                   dr=dr, topn=1)
-    if row is not None:
-        return row                     # pandas.Series döner
-
-    # 2) Yedek plan (Astroquery spectro) – ugriz olmayabilir
+    base_url = f"https://skyserver.sdss.org/dr{dr}/SkyServerWS/SearchTools/SqlSearch"
+    
+    # Yarıçapı dereceye çevir (API'nin beklediği format)
+    radius_deg = radius_arcsec / 3600.0
+    
+    # Koordinatlara göre en yakın nesneyi bulan SQL sorgusu
+    sql = f"""
+        SELECT TOP 1
+            CAST(p.objid AS VARCHAR(20)) AS objid,
+            p.ra, p.dec,
+            p.u AS u, p.g AS g, p.r AS r, p.i AS i, p.z AS z_mag,
+            s.plate AS plate, s.mjd AS mjd, s.fiberid AS fiberid,
+            s.z AS redshift,
+            dbo.fDistanceEq({ra}, {dec}, p.ra, p.dec) * 3600.0 AS distance_arcsec
+        FROM PhotoObjAll AS p
+        LEFT JOIN SpecObjAll AS s
+               ON p.objid = s.bestobjid
+        WHERE SQUARE(p.ra - {ra}) + SQUARE(p.dec - {dec}) < SQUARE({radius_deg})
+        ORDER BY dbo.fDistanceEq({ra}, {dec}, p.ra, p.dec) ASC
+    """
+    
+    # HTTP GET isteği
+    params = {"cmd": sql, "format": "json"}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json'
+    }
+    
     try:
-        from astropy.coordinates import SkyCoord
-        from astropy import units as u
-        coords = SkyCoord(ra*u.deg, dec*u.deg)
-        res = SDSS.query_region(coords,
-                                radius=radius_arcsec*u.arcsec,
-                                spectro=True,
-                                photoobj_fields=["ra","dec","u","g","r","i","z"])
-        if res is not None and len(res) > 0:
-            return pd.Series({c: res[0][c] for c in res.colnames})
-    except Exception as e:
-        print(f"Astroquery yedeği hata verdi: {e}")
-
-    return None
-
-
-import requests, urllib.parse as ul, pandas as pd
-
-def _run_sql(sql, dr=18, timeout=15):
-    """
-    SkyServerWS/SqlSearch?format=json…   •   pandas.Series | None
-    """
-    q = ul.quote_plus(sql)
-    url = (f"https://skyserver.sdss.org/dr{dr}/"
-           f"SkyServerWS/SearchTools/SqlSearch"
-           f"?cmd={q}&format=csv")
-    try:
-        r = requests.get(url, timeout=timeout)
-        r.raise_for_status()
-    except requests.exceptions.Timeout:
-        print("SkyServer timeout 👎")
-        return None
-    except requests.HTTPError as e:
-        print("SkyServer HTTP hata:", e)
-        return None
-
-    # İlk satır başlık — ikinci satır veri
-    from io import StringIO
-    import pandas as pd
-    df = pd.read_csv(StringIO(r.text))
-    if df.empty:
-        return None
-    return df.iloc[0]          # pandas.Series
-
-def get_sdss_image(ra, dec, scale=0.3, width=256, height=256):
-    """SDSS'ten verilen koordinatlar için gökyüzü görüntüsünü çeker"""
-    try:
-        # Farklı API URL'lerini dene
-        urls = [
-            # DR18 navigasyon aracı görüntü URLs (en güvenilir)
-            f"https://skyserver.sdss.org/dr18/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            
-            # Diğer DR sürümleri için görüntü uçnoktaları
-            f"http://skyserver.sdss.org/dr17/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            f"http://skyserver.sdss.org/dr16/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            
-            # Güvenli bağlantı (HTTPS) uçnoktaları
-            f"https://skyserver.sdss.org/dr17/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            f"https://skyserver.sdss.org/dr16/SkyServer/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            
-            # Navigasyon görüntü araçları
-            f"https://skyserver.sdss.org/dr18/en/tools/chart/navi.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
-            f"https://skyserver.sdss.org/dr17/en/tools/chart/navi.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
-            
-            # Alternatif servisler
-            f"http://skyservice.pha.jhu.edu/DR16/ImgCutout/getjpeg.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            f"http://skyservice.pha.jhu.edu/DR17/ImgCutout/getjpeg.aspx?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            
-            # Web servis API'leri
-            f"https://dr18.sdss.org/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            f"https://dr17.sdss.org/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            f"https://dr16.sdss.org/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}",
-            
-            # GetImage API'si
-            f"https://skyserver.sdss.org/dr18/SkyServer/GetImage/getImage?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
-            f"https://skyserver.sdss.org/dr17/SkyServer/GetImage/getImage?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt=",
-            f"https://skyserver.sdss.org/dr16/SkyServer/GetImage/getImage?ra={ra}&dec={dec}&scale={scale}&width={width}&height={height}&opt="
-        ]        # User-Agent ekleyerek istek başlıklarını hazırla
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'image/jpeg, image/png, image/*',
-            'Origin': 'https://skyserver.sdss.org',  
-            'Referer': 'https://skyserver.sdss.org/navigate/'
+        print(f"SDSS API sorgusu: RA={ra}, Dec={dec}, Yarıçap={radius_arcsec} yay saniyesi")
+        resp = requests.get(base_url, params=params, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        
+        # Debug bilgisi
+        print(f"API yanıt durum kodu: {resp.status_code}")
+        print(f"API yanıt içeriği başlangıcı: {resp.text[:200]}...")
+        
+        data = resp.json()
+        
+        # Yanıt yapısı kontrolü
+        if not data or len(data) == 0:
+            print(f"Koordinat sorgusu ({ra}, {dec}) için yanıt boş.")
+            return None
+        
+        # Rows anahtarı varsa (SDSS API'nin yaygın formatı)
+        if "Rows" in data[0]:
+            rows = data[0]["Rows"]
+            if not rows:
+                print(f"Koordinat sorgusu ({ra}, {dec}) için nesne bulunamadı.")
+                return None
+            row = rows[0]  # İlk satırı (en yakın nesne) al
+        else:
+            # Eski API formatı (doğrudan dizi)
+            if not data:
+                print(f"Koordinat sorgusu ({ra}, {dec}) için nesne bulunamadı.")
+                return None
+            row = data[0]
+        
+        # Debug bilgisi - yanıt anahtarları
+        print(f"API yanıt anahtarları: {list(row.keys())}")
+        print(f"En yakın nesne: {row.get('distance_arcsec', 'bilinmiyor')} yay saniyesi uzaklıkta")
+        
+        # Sonuç sözlüğünü oluştur ve döndür
+        result = {
+            "objid":    str(row.get("objid", "unknown")),
+            "ra":       float(row.get("ra", ra)),
+            "dec":      float(row.get("dec", dec)),
+            "u":        float(row.get("u", 0)),
+            "g":        float(row.get("g", 0)),
+            "r":        float(row.get("r", 0)),
+            "i":        float(row.get("i", 0)),
+            "z_mag":    float(row.get("z", 0)),  # 'z' veya 'z_mag' olabilir
+            "plate":    row.get("plate"),
+            "mjd":      row.get("mjd"),
+            "fiberid":  row.get("fiberid"),
+            "redshift": row.get("redshift")
         }
         
-        for url in urls:
-            print(f"Görüntü URL'si deneniyor: {url}")
+        # z_mag için anahtar kontrolü (farklı API yanıtları farklı isimler kullanabilir)
+        if "z_mag" in row:
+            result["z_mag"] = float(row.get("z_mag", 0))
+        elif "z" in row:
+            result["z_mag"] = float(row.get("z", 0))
             
-            try:
-                response = requests.get(url, headers=headers, timeout=30)
-                
-                if response.status_code == 200 and response.content:
-                    # Content-Type kontrol et
-                    content_type = response.headers.get('Content-Type', '')
-                    print(f"Görüntü yanıt content-type: {content_type}")
-                    
-                    if 'image' in content_type:
-                        print(f"Başarılı görüntü elde edildi: {len(response.content)} bayt")
-                        return Image.open(BytesIO(response.content))
-                    elif 'text/html' in content_type:
-                        # HTML döndüyse ve içinde bir resim etiketi varsa, o resmi çekmeyi dene
-                        print("HTML içeriği döndü, resim etiketi aranıyor...")
-                        if b'<img' in response.content:
-                            print("HTML içinde resim etiketi bulundu, doğrudan görseli çekmeye çalışılacak")
-                            continue
-                        else:
-                            print("HTML içinde resim etiketi bulunamadı")
-                            continue
-                    else:
-                        print(f"İçerik resim değil: {content_type}")
-                        continue
-                else:
-                    print(f"Görüntü çekilemedi: HTTP {response.status_code}")
-                    continue
-            except Exception as e:
-                print(f"URL isteği hatası: {str(e)}")
-                continue
+        return result
         
-        print("Tüm görüntü URL'leri başarısız oldu")
-        return None
+    except requests.exceptions.Timeout:
+        print(f"SDSS API zaman aşımı: Koordinat ({ra}, {dec})")
+    except requests.exceptions.HTTPError as e:
+        print(f"SDSS API HTTP hatası: {e}")
+    except ValueError as e:
+        print(f"SDSS API JSON ayrıştırma hatası: {e}")
     except Exception as e:
-        print(f"Görüntü çekilirken hata: {str(e)}")
-        return None
+        print(f"SDSS API genel hata: {e}")
+    
+    # Hata durumunda farklı DR sürümlerini deneyelim
+    if dr == 18:
+        print("DR18 başarısız oldu, DR17 deneniyor...")
+        return get_sdss_object_by_coords(ra, dec, radius_arcsec, dr=17, timeout=timeout)
+    elif dr == 17:
+        print("DR17 başarısız oldu, DR16 deneniyor...")
+        return get_sdss_object_by_coords(ra, dec, radius_arcsec, dr=16, timeout=timeout)
+    
+    # Tüm denemeler başarısız oldu
+    print(f"Tüm SDSS DR sürümleri için koordinat sorgusu başarısız: ({ra}, {dec})")
+    return None
 
 # ---------------------------------------------------------------------
 # Veri Görselleştirme İşlevleri
