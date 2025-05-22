@@ -605,8 +605,6 @@ if rf is not None and scaler is not None:
                     col1, col2 = st.columns(2)
                     with col1:
                         st.pyplot(plot_predictions(pred_class, class_probs))
-                    with col2:
-                        st.pyplot(display_confidence_gauge(confidence))
                     
             except Exception as e:
                 st.error(f"Sınıflandırma hatası: {str(e)}")
