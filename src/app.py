@@ -25,6 +25,7 @@ import requests
 import os
 import time
 from prediction import get_sdss_by_objid
+from prediction import get_sdss_image_by_objid
 
 # Add styling after page config
 page_bg_img = '''
@@ -360,6 +361,7 @@ if rf is not None and scaler is not None:
         st.subheader("Gökyüzü Haritası ile Gök Cismi Ara")        
         st.markdown("##### SDSS DR18 Navigasyon Aracı")
         st.markdown("SDSS'in Aladin Sky Atlas kullanan navigasyon aracıyla daha detaylı inceleme yapabilirsiniz.")
+
         sdss_iframe = """
         <iframe id="naviframe" scrolling="yes" allow="clipboard-write" 
                 style="width: 100%; height: 750px; overflow: visible; border:1px solid #ccc; border-radius:5px; background-color: #fff;" 
@@ -402,6 +404,23 @@ if rf is not None and scaler is not None:
                 if debug_mode:
                     st.subheader("Bulunan Veri")
                     st.write(row)
+                    st.write("Değerlerin tipleri:")
+                    for key, value in row.items():
+                        st.write(f"{key}: {value} (tip: {type(value).__name__})")
+
+                # Spektroskopik veri kontrolü
+                has_spectro = row.get("plate") is not None and row.get("mjd") is not None and row.get("fiberid") is not None and row.get("redshift") is not None
+                spectro_none = all(row.get(col) is None for col in ["plate", "mjd", "fiberid", "redshift"])
+
+                if not has_spectro or spectro_none:
+                    st.warning("""
+                    ⚠️ **Spektroskopik Veri Eksik**
+                    
+                    Bu nesne için spektroskopik veriler (plate, mjd, fiberid, redshift) mevcut değil. 
+                    Bu durum normal olup, SDSS'in tüm nesneler için spektroskopik gözlem yapmadığını gösterir.
+                    
+                    Tahmin sadece fotometrik verilere (u,g,r,i,z) dayanacak ve sonuçlar yanlış olabilir.
+                    """)
 
                 # Özellik vektörü oluştur
                 with st.spinner("Özellik vektörü oluşturuluyor..."):
@@ -412,11 +431,16 @@ if rf is not None and scaler is not None:
                     i_  = float(row.get("i", 0))
                     z_  = float(row.get("z_mag", 0))
                     
-                    # Verilerin var olduğunu kontrol et
-                    missing = [b for b,v in zip("ugriz", (u_,g_,r_,i_,z_)) if v == 0]
-                    if missing:
-                        st.error(f"Fotometrik veri eksik: {', '.join(missing)} band(lar)ı yok. Farklı bir ObjID deneyin.")
-                        st.stop()
+                    # Spektroskopik değerleri oku (None yerine 0 kullan)
+                    plate = 0 if row.get("plate") is None else float(row.get("plate", 0))
+                    mjd = 0 if row.get("mjd") is None else float(row.get("mjd", 0))
+                    fiberid = 0 if row.get("fiberid") is None else float(row.get("fiberid", 0))
+                    redshift = 0 if row.get("redshift") is None else float(row.get("redshift", 0))
+                    
+                    # Debug bilgisi
+                    if debug_mode:
+                        st.write("Fotometrik değerler:", f"u={u_}, g={g_}, r={r_}, i={i_}, z={z_}")
+                        st.write("Spektroskopik değerler:", f"plate={plate}, mjd={mjd}, fiberid={fiberid}, redshift={redshift}")
                     
                     fv = make_feature_vector(
                         u_, g_, r_, i_, z_,
@@ -429,23 +453,39 @@ if rf is not None and scaler is not None:
                 # Ölçekle + tahmin et
                 with st.spinner("Gök cismi sınıflandırılıyor..."):
                     X_scaled, _ = preprocess_data(fv, scaler, debug=debug_mode)
-                    pred_class, confidence, class_probs = predict(X_scaled, rf, scaler, labels)
+                    
+                    # predict() fonksiyonu yerine manuel ve CSV yöntemleriyle aynı kodu kullan
+                    rf_probs = rf.predict_proba(X_scaled)
+                    pred_classes_idx = rf_probs.argmax(1)
+                    pred_class = labels[pred_classes_idx[0]]
+                    confidence = rf_probs[0, pred_classes_idx[0]]
+                    
+                    # Tüm sınıf olasılıklarını hazırla
+                    class_probs = {label: float(rf_probs[0, i]) for i, label in enumerate(labels)}
 
                 # Sonuçları göster
                 st.success(f"Tahmin: **{pred_class}**  —  Güven: **{confidence:.3f}**")
                 st.markdown(get_object_info_text(pred_class, confidence))
 
-                col1, col2 = st.columns(2)
-                col1.pyplot(plot_predictions(pred_class, class_probs))
-                col2.pyplot(display_confidence_gauge(confidence))
+                st.pyplot(plot_predictions(pred_class, class_probs))
 
                 # SDSS görüntüsü - objid'den gelen row'da ra/dec değerleri yoksa
-                if "ra" in row and "dec" in row:
-                    img = get_sdss_image(row["ra"], row["dec"], scale=0.3)
+                objid_value = row.get('objid', objid_input)
+                with st.spinner("SDSS görüntüsü alınıyor..."):
+                    img = get_sdss_image_by_objid(objid_value, scale=0.3)
                     if img:
-                        st.image(img, caption="SDSS kesiti")
-                else:
-                    st.warning("Bu ObjID için görüntü alınamadı. Koordinat (RA/Dec) bilgisi bulunmuyor.")
+                        st.image(img, caption="SDSS kesiti (ObjID ile)")
+                    else:
+                        st.warning(f"""
+                        **Bu ObjID için görüntü alınamadı**
+                        
+                        Kullanılan ObjID: {objid_value}
+                        
+                        Aşağıdaki seçenekleri deneyebilirsiniz:
+                        1. [SDSS Navigator aracını](https://skyserver.sdss.org/dr18/en/tools/chart/navi.aspx) kullanın
+                        2. [SDSS Explorer](https://skyserver.sdss.org/dr18/en/tools/explore/summary.aspx?id={objid_value}) sayfasını ziyaret edin
+                        3. Koordinat ile aramayı deneyin
+                        """)
                     
                 # Nesne ID detaylarını göster
                 with st.expander("Nesne Detayları"):
@@ -610,10 +650,7 @@ if rf is not None and scaler is not None:
                     col3.metric("r - i", f"{(r_mag - i_mag):.2f}")
                     col4.metric("i - z", f"{(i_mag - z_mag):.2f}")
                     
-                    # Grafik göster
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.pyplot(plot_predictions(pred_class, class_probs))
+                    st.pyplot(plot_predictions(pred_class, class_probs))
                     
             except Exception as e:
                 st.error(f"Sınıflandırma hatası: {str(e)}")

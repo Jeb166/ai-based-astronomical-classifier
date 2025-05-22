@@ -218,6 +218,87 @@ def get_sdss_by_objid(objid: int, dr: int = 18, timeout: int = 60) -> dict:
             "redshift": None
         }
 
+# Mevcut import kısmına BytesIO ve Image ekleyin (yoksa)
+def get_sdss_image_by_objid(objid, scale=0.3):
+    """
+    ObjID kullanarak doğrudan SDSS görüntüsü alır.
+    Çeşitli URL formatlarını ve DR sürümlerini dener.
+    """
+    try:
+        # ObjID'yi string olarak aldığımızdan emin olalım
+        objid_str = str(objid).strip()
+        print(f"Görüntü alma girişimi: ObjID={objid_str}")
+        
+        # Denenecek URL formatları
+        url_formats = [
+            # SkyServerWS ImgCutout - temel format
+            "https://skyserver.sdss.org/dr{}/SkyServerWS/ImgCutout/getjpeg?objid={}&scale={}",
+            
+            # SkyServer'ın doğrudan resim görüntüleme sayfası
+            "https://skyserver.sdss.org/dr{}/en/tools/explore/summary.aspx?id={}",
+            
+            # Navigasyon aracı - ObjID ile
+            "https://skyserver.sdss.org/dr{}/SkyServer/navigate?id={}&apid=&ra=&dec=&scale=0.2&width=240&height=240",
+            
+            # Farklı parametre formatı deneyin
+            "https://dr{}.sdss.org/SkyServerWS/ImgCutout/getjpeg?objid={}&scale={}", 
+            
+            # GetImage API
+            "https://skyserver.sdss.org/dr{}/SkyServer/GetImage?id={}&scale={}"
+        ]
+        
+        # Farklı DR sürümleri
+        for dr in [18, 17, 16, 15, 14, 13, 12]:
+            # Farklı URL formatları
+            for url_format in url_formats:
+                img_url = url_format.format(dr, objid_str, scale)
+                print(f"Deneniyor: {img_url}")
+                
+                # User-Agent ekleyerek tarayıcı gibi davranın
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'image/jpeg, image/png, image/*'
+                }
+                
+                try:
+                    response = requests.get(img_url, headers=headers, timeout=10)
+                    print(f"HTTP yanıt kodu: {response.status_code}, İçerik tipi: {response.headers.get('Content-Type', 'Bilinmiyor')}")
+                    
+                    if response.status_code == 200:
+                        # İçerik tipi kontrolü
+                        content_type = response.headers.get('Content-Type', '')
+                        
+                        if 'image' in content_type:
+                            try:
+                                img = Image.open(BytesIO(response.content))
+                                print(f"Görüntü başarıyla alındı: {img.size} piksel")
+                                return img
+                            except Exception as e:
+                                print(f"Görüntü açılırken hata: {str(e)}")
+                                # Devam et, diğer URL'leri dene
+                        elif 'text/html' in content_type:
+                            # Bazı API'ler doğrudan görüntü yerine HTML dönebilir
+                            # HTML içeriğindeki ilk görüntüyü çekmeyi deneyebiliriz
+                            # (şimdilik atlıyoruz)
+                            pass
+                except Exception as e:
+                    print(f"URL isteği başarısız: {str(e)}")
+                    # Devam et, diğer URL'leri dene
+        
+        # Alternatif olarak SDSS Explorer kullanarak resmi çek
+        try:
+            explorer_url = f"https://dr18.sdss.org/optical/spectrum/view?plateid=10006&mjd=58493&fiberid=618"
+            print(f"Explorer aracını deneme: {explorer_url}")
+            return None  # Şimdilik atlanıyor, gerekirse implement edilebilir
+        except Exception as e:
+            print(f"Explorer görüntü alma başarısız: {str(e)}")
+        
+        print("Tüm yöntemler başarısız oldu, görüntü alınamadı.")
+        return None
+    except Exception as e:
+        print(f"ObjID ile görüntü alınırken genel hata: {str(e)}")
+        return None
+
 def get_spectra_link(obj_id):
     """SDSS'ten verilen obj_id için spektrum bağlantısını alır"""
     try:
