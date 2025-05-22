@@ -626,7 +626,8 @@ if rf is not None and scaler is not None:
         
         if uploaded_file is not None:
             try:
-                df = pd.read_csv(uploaded_file)                
+                # objid sütununu string olarak oku (büyük tamsayılar için)
+                df = pd.read_csv(uploaded_file, dtype={'objid': str, 'specobjid': str})               
                 st.write("CSV dosyası yüklendi! İlk birkaç satır:")
                 st.dataframe(df.head())
                 
@@ -663,25 +664,25 @@ if rf is not None and scaler is not None:
                                     
                                     # İstatistikler
                                     st.subheader("Sınıflandırma İstatistikleri")
-                                    
-                                    # Sınıf dağılımı
+                                      # Sınıf dağılımı
                                     class_dist = pd.Series(pred_classes).value_counts()
                                     st.bar_chart(class_dist)
-                                    
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.metric("Ortalama Güven", f"{np.mean(confidences):.4f}")
-                                    with col2:
-                                        st.metric("Medyan Güven", f"{np.median(confidences):.4f}")
-                                    
-                                    # Gerçek değerler ile karşılaştırma
+                                      # Üç metriği yan yana göster
                                     has_class = 'class' in df.columns and true_classes is not None
+                                    from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+                                    
                                     if has_class:
-                                        from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
-                                        
+                                        # Gerçek sınıflar varsa üç metriği yan yana göster
                                         accuracy = accuracy_score(true_classes, pred_classes)
-                                        st.metric("Doğruluk (Accuracy)", f"{accuracy:.4f}")
-                                        
+                                        col1, col2, col3 = st.columns(3)
+                                        with col1:
+                                            st.metric("Ortalama Güven", f"{np.mean(confidences):.4f}")
+                                        with col2:
+                                            st.metric("Medyan Güven", f"{np.median(confidences):.4f}")
+                                        with col3:
+                                            st.metric("Doğruluk (Accuracy)", f"{accuracy:.4f}")
+                                            
+                                        # Sınıflandırma raporu ve karmaşıklık matrisi göster
                                         st.subheader("Sınıflandırma Raporu")
                                         report = classification_report(true_classes, pred_classes, output_dict=True)
                                         report_df = pd.DataFrame(report).transpose()
@@ -697,6 +698,12 @@ if rf is not None and scaler is not None:
                                         plt.xlabel('Tahmin Edilen Sınıf')
                                         plt.ylabel('Gerçek Sınıf')
                                         st.pyplot(fig)
+                                    else:                                        # Doğruluk değeri yoksa sadece güven değerlerini göster
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.metric("Ortalama Güven", f"{np.mean(confidences):.4f}")
+                                        with col2:
+                                            st.metric("Medyan Güven", f"{np.median(confidences):.4f}")
                                     
                                     # Sonuçları CSV olarak indirme
                                     csv = results_df.to_csv(index=False)
