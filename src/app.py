@@ -688,14 +688,16 @@ if rf is not None and scaler is not None:
                                         
                                         st.subheader("Karmaşıklık Matrisi")
                                         cm = confusion_matrix(true_classes, pred_classes)
-                                        fig, ax = plt.subplots(figsize=(8, 6))
+                                        fig, ax = plt.subplots(figsize=(4, 3))
                                         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                                                     xticklabels=labels,
                                                     yticklabels=labels)
-                                        plt.title('Karmaşıklık Matrisi')
-                                        plt.xlabel('Tahmin Edilen Sınıf')
-                                        plt.ylabel('Gerçek Sınıf')
-                                        st.pyplot(fig)
+                                        plt.title('Karmaşıklık Matrisi', fontsize=10)
+                                        plt.xlabel('Tahmin Edilen Sınıf', fontsize=8)
+                                        plt.ylabel('Gerçek Sınıf', fontsize=8)
+                                        plt.xticks(fontsize=7)
+                                        plt.yticks(fontsize=7)
+                                        st.pyplot(fig, use_container_width=False)
                                     else:                                        # Doğruluk değeri yoksa sadece güven değerlerini göster
                                         col1, col2 = st.columns(2)
                                         with col1:
