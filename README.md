@@ -8,8 +8,7 @@ Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflan
 
 1. Veri setini indirmek için aşağıdaki Google Drive bağlantısını kullanın:
 ```
-[Veri Seti İndirme Bağlantısı] 
-https://drive.google.com/drive/folders/YOUR_FOLDER_ID
+https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing
 ```
 
 2. İndirilen veri dosyalarını `data/` klasörüne yerleştirin:
