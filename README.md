@@ -101,9 +101,22 @@ A **Streamlit** interface allows manual input of photometric values for instant 
 
 
 
-## 5. Dataset Download & Placement
+## 5. Installation & Usage
 
-### Download
+### 1. Clone the repository
+
+```
+git clone https://github.com/Jeb166/ai-based-astronomical-classifier.git
+cd ai-based-astronomical-classifier
+```
+
+### 2. Install dependencies
+
+```
+pip install -r requirements.txt
+```
+
+### 3. Download the dataset
 
 Dataset files can be downloaded from:
 
@@ -114,7 +127,7 @@ Files include:
 * `skyserver.csv` — main training dataset
 * `skyserver_test_data.csv` — held-out test dataset
 
-### Placement
+### 4. Place the dataset files
 
 Place them inside the project’s `data/` directory:
 
@@ -132,30 +145,13 @@ ai-based-astronomical-classifier/
 
 The scripts automatically load data from this folder.
 
-
-
-## 6. Installation & Usage
-
-### Clone the repository
-
-```
-git clone https://github.com/Jeb166/ai-based-astronomical-classifier.git
-cd ai-based-astronomical-classifier
-```
-
-### Install dependencies
-
-```
-pip install -r requirements.txt
-```
-
-### Train the model
+### 5. Train the model
 
 ```
 python src/main.py
 ```
 
-### Run the Streamlit interface
+### 6. Run the Streamlit interface
 
 ```
 streamlit run src/streamlit.py
@@ -163,7 +159,7 @@ streamlit run src/streamlit.py
 
 
 
-## 7. Dependencies
+## 6. Dependencies
 
 The project uses the following Python packages:
 
@@ -182,7 +178,7 @@ pip install -r requirements.txt
 
 
 
-## 8. Project Structure
+## 7. Project Structure
 
 ```
 ai-based-astronomical-classifier/
@@ -202,7 +198,7 @@ ai-based-astronomical-classifier/
 
 
 
-## 9. Features Used
+## 8. Features Used
 
 * u, g, r, i, z magnitudes
 * Derived color indices
@@ -210,7 +206,7 @@ ai-based-astronomical-classifier/
 
 
 
-## 10. Limitations
+## 9. Limitations
 
 * Photometric-only classification
 * Accuracy varies depending on dataset version
@@ -219,7 +215,7 @@ ai-based-astronomical-classifier/
 
 
 
-## 11. Future Work
+## 10. Future Work
 
 * Integrating spectroscopic measurements
 * Trying XGBoost / LightGBM
@@ -229,13 +225,13 @@ ai-based-astronomical-classifier/
 
 
 
-## 12. License
+## 11. License
 
 This project is licensed under the **MIT License**.
 See the `LICENSE` file for details.
 
 
 
-## 13. Contact
+## 12. Contact
 
 For inquiries: **[emrebas02@hotmail.com](mailto:emrebas02@hotmail.com)**
