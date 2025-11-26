@@ -61,38 +61,6 @@ The dataset is derived from **SDSS DR17** photometric measurements and includes:
 * Stratified train–test split
 
 
-## Dataset Download & Placement
-
-### Download
-
-Dataset files can be downloaded from:
-
-[https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing](https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing)
-
-Files include:
-
-* `skyserver.csv` — main training dataset
-* `skyserver_test_data.csv` — held-out test dataset
-
-### Placement
-
-Place them inside the project’s `data/` directory:
-
-```
-ai-based-astronomical-classifier/
-│
-├── data/
-│   ├── skyserver.csv
-│   └── skyserver_test_data.csv
-│
-├── src/
-├── outputs/
-└── README.md
-```
-
-The scripts automatically load data from this folder.
-
-
 ## 4. Methodology
 
 ### 1. Data Cleaning
@@ -127,8 +95,39 @@ All experiments were run on a held-out test set.
 
 A **Streamlit** interface allows manual input of photometric values for instant predictions.
 
+## 5. Dataset Download & Placement
 
-## 5. Installation & Usage
+### Download
+
+Dataset files can be downloaded from:
+
+[https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing](https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing)
+
+Files include:
+
+* `skyserver.csv` — main training dataset
+* `skyserver_test_data.csv` — held-out test dataset
+
+### Placement
+
+Place them inside the project’s `data/` directory:
+
+```
+ai-based-astronomical-classifier/
+│
+├── data/
+│   ├── skyserver.csv
+│   └── skyserver_test_data.csv
+│
+├── src/
+├── outputs/
+└── README.md
+```
+
+The scripts automatically load data from this folder.
+
+
+## 6. Installation & Usage
 
 ### Clone the repository
 
@@ -157,7 +156,7 @@ streamlit run src/streamlit.py
 
 ---
 
-## 6. Dependencies
+## 7. Dependencies
 
 The project uses the following Python packages:
 
@@ -175,7 +174,7 @@ pip install -r requirements.txt
 ```
 
 
-## 7. Project Structure
+## 8. Project Structure
 
 ```
 ai-based-astronomical-classifier/
@@ -193,14 +192,14 @@ ai-based-astronomical-classifier/
 └── README.md
 ```
 
-## 8. Features Used
+## 9. Features Used
 
 * u, g, r, i, z magnitudes
 * Derived color indices
 * Cleaned & normalized numeric attributes
 
 
-## 9. Limitations
+## 10. Limitations
 
 * Photometric-only classification
 * Accuracy varies depending on dataset version
@@ -208,7 +207,7 @@ ai-based-astronomical-classifier/
 * No spectroscopic features included
 
 
-## 10. Future Work
+## 11. Future Work
 
 * Integrating spectroscopic measurements
 * Trying XGBoost / LightGBM
@@ -217,12 +216,12 @@ ai-based-astronomical-classifier/
 * Enhanced preprocessing and feature engineering
 
 
-## 11. License
+## 12. License
 
 This project is licensed under the **MIT License**.
 See the `LICENSE` file for details.
 
 
-## 12. Contact
+## 13. Contact
 
 For inquiries: **[emrebas02@hotmail.com](mailto:emrebas02@hotmail.com)**
