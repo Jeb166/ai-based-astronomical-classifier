@@ -161,8 +161,6 @@ python src/main.py
 streamlit run src/streamlit.py
 ```
 
----
-
 
 
 ## 7. Dependencies
