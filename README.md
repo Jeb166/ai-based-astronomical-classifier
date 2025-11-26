@@ -1,124 +1,241 @@
 # 🔭 AI-based Astronomical Classifier
 
-Bu proje, astronomik nesneleri (galaksiler, kuasarlar ve yıldızlar) sınıflandırmak için geliştirilmiş bir makine öğrenmesi modelini içermektedir. SDSS (Sloan Digital Sky Survey) verileri üzerinde eğitilmiş model, temel sınıflandırma görevlerinde yüksek doğruluk sağlamaktadır.
+This project implements a machine learning pipeline to classify **Galaxies**, **QSOs (Quasars)**, and **Stars** using photometric data from the **Sloan Digital Sky Survey (SDSS)**.
 
-## Kurulum ve Çalıştırma
+It demonstrates how classical machine learning techniques can be applied to real scientific datasets, combining data preprocessing, feature engineering, and predictive modeling into a reproducible workflow.
 
-### Veri Setini İndirme
+The final Random Forest model achieves approximately **86% test accuracy**, which reflects realistic performance for photometric-only SDSS classification tasks.
 
-1. Veri setini indirmek için aşağıdaki Google Drive bağlantısını kullanın:
-```
-https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing
-```
+---
 
-2. İndirilen veri dosyalarını `data/` klasörüne yerleştirin:
-   - `skyserver.csv` (Ana veri seti)
-   - `skyserver_test_data.csv` (Test veri seti)
-   - `skyserver_199k_66-66-66.csv` (Dengeli veri seti)
-   - `skyserver_200k_50-40-10.csv` (Gerçek dağılıma yakın veri seti)
-   - `skyserver_99k_33-33-33.csv` (Küçük dengeli veri seti)
+## 1. Project Overview
 
-### Yerel Bilgisayarda Kurulum
+This project builds an end-to-end pipeline for astronomical object classification.
+The system includes:
 
-1. Depoyu klonlayın:
-```bash
-git clone https://github.com/yourusername/ai-based-astronomical-classifier.git
-cd ai-based-astronomical-classifier
-```
+* Data loading and preprocessing
+* Feature engineering from photometric magnitudes
+* Model training using classical ML algorithms
+* Evaluation on a held-out test set
+* A Streamlit interface for real-time predictions
 
-2. Sanal ortam oluşturun (opsiyonel):
-```bash
-python -m venv venv
-# Windows'da
-venv\Scripts\activate
-# Linux/Mac'de
-source venv/bin/activate
-```
+The main goal is to automate the classification of celestial objects using efficient and interpretable machine learning methods.
 
-3. Gereksinimleri yükleyin:
-```bash
-pip install -r requirements.txt
-```
+---
 
-### Çalıştırma Adımları
+## 2. Motivation
 
-#### 1. Modeli Eğitme
+Astronomical surveys, including SDSS, produce massive amounts of observational data. Manual classification is no longer feasible due to scale.
 
-Modeli kullanmadan önce eğitmeniz gerekmektedir. Bunun için aşağıdaki komutu çalıştırın:
-```bash
-python src/main.py
-```
-Bu işlem, modeli eğitecek ve gerekli dosyaları `outputs/` klasörüne kaydedecektir.
+Automated classification enables:
 
-#### 2. Web Arayüzü İle Kullanım
+* Faster and consistent labeling
+* Detection of rare or ambiguous objects
+* Scalable astronomical catalog generation
+* Reduced human workload
 
-Model eğitildikten sonra Streamlit arayüzünü başlatabilirsiniz:
-```bash
-streamlit run src/streamlit.py
-```
-Bu komut, tarayıcınızda Streamlit arayüzünü açacaktır.
+This project shows that structured photometric data alone can be leveraged to build a reliable multi-class classifier using classical ML techniques.
 
-## Proje Yapısı
+---
+
+## 3. Dataset
+
+### Source
+
+The dataset is derived from **SDSS DR17** photometric measurements and includes:
+
+* Magnitudes: **u, g, r, i, z**
+* Derived color indices (e.g., **u–g**, **g–r**, **r–i**)
+* Additional numeric features
+
+### Class Labels
+
+* **Galaxy**
+* **QSO (Quasar)**
+* **Star**
+
+### Preprocessing Steps
+
+* Removing missing or invalid entries
+* Selecting relevant photometric attributes
+* Creating color indices
+* Feature scaling
+* Label encoding
+* Stratified train–test split
+
+---
+
+## Dataset Download & Placement
+
+### Download
+
+Dataset files can be downloaded from:
+
+[https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing](https://drive.google.com/drive/folders/1I4WRYGt0J2rQfdmVrJaCZiiGzDswaEc_?usp=sharing)
+
+Files include:
+
+* `skyserver.csv` — main training dataset
+* `skyserver_test_data.csv` — held-out test dataset
+
+### Placement
+
+Place them inside the project’s `data/` directory:
 
 ```
 ai-based-astronomical-classifier/
 │
-├── src/                  # Kaynak kod
-│   ├── main.py           # Ana program (model eğitimi)
-│   ├── streamlit.py      # Web arayüzü
-│   ├── prediction.py     # Tahmin fonksiyonları
-│   ├── prepare_data.py   # Veri hazırlama modülü
-│   └── data_analysis.py  # Veri analiz araçları
+├── data/
+│   ├── skyserver.csv
+│   └── skyserver_test_data.csv
 │
-├── data/                 # Veri dosyaları
-│   ├── skyserver.csv     # Ana veri seti
-│   └── skyserver_test_data.csv # Test veri seti
-│
-├── outputs/              # Model çıktıları ve grafikler
-│   ├── rf_model.joblib   # Eğitilmiş Random Forest modeli
-│   └── scaler.joblib     # Özellik ölçekleyici
-│
-├── backups/              # Eski model referansları
-│
-├── requirements.txt      # Gereksinimler
-└── README.md             # Bu dokümantasyon
+├── src/
+├── outputs/
+└── README.md
 ```
 
-## Model Performansı
+The scripts automatically load data from this folder.
 
-- **Random Forest Modeli**: Galaksi/Kuasar/Yıldız ayrımında yüksek doğruluk.
+---
 
-## Teknik Detaylar
+## 4. Methodology
 
-Kullanılan temel özellikler:
-- 5 band fotometrik magnitude (u, g, r, i, z)
-- 4 renk indeksi (u-g, g-r, r-i, i-z)
-- Redshift ve diğer spektroskopik ölçümler
+### 1. Data Cleaning
 
-Model mimarisi:
-- Random Forest ile temel sınıflandırma (500 ağaç ve optimize edilmiş hiperparametreler)
+Filtering invalid rows, removing irrelevant columns, and ensuring consistency.
 
-## Gereksinimler
+### 2. Feature Engineering
+
+Constructing physically meaningful color indices and selecting the strongest photometric predictors.
+
+### 3. Scaling & Normalization
+
+Applying appropriate feature scaling where needed.
+
+### 4. Model Training
+
+Models tested:
+
+* **Random Forest** (final model)
+* Fully connected **Deep Neural Network**
+* Simple ensemble combinations
+
+Random Forest was chosen due to its stability and balanced performance.
+
+### 5. Evaluation
+
+All experiments were run on a held-out test set.
+
+**Final test accuracy (Random Forest): ~86%**
+
+### 6. User Interface
+
+A **Streamlit** interface allows manual input of photometric values for instant predictions.
+
+---
+
+## 5. Installation & Usage
+
+### Clone the repository
 
 ```
-pandas >= 1.3.0
-numpy >= 1.20.0
-scikit-learn >= 1.0.0
-matplotlib >= 3.4.0
-seaborn >= 0.11.0
-joblib >= 1.1.0
-streamlit >= 1.18.0
-requests >= 2.28.0
-pillow >= 9.0.0
-plotly >= 5.10.0
-astroquery >= 0.4.6
-astropy >= 5.0.0
+git clone https://github.com/Jeb166/ai-based-astronomical-classifier.git
+cd ai-based-astronomical-classifier
 ```
 
-## Lisans
+### Install dependencies
 
-Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için LICENSE dosyasına bakın.
+```
+pip install -r requirements.txt
+```
 
-## İletişim
+### Train the model
 
-Sorularınız için: emrebas02@hotmail.com
+```
+python src/main.py
+```
+
+### Run the Streamlit interface
+
+```
+streamlit run src/streamlit.py
+```
+
+---
+
+## 6. Dependencies
+
+The project uses the following Python packages:
+
+* pandas
+* numpy
+* scikit-learn
+* matplotlib
+* seaborn
+* streamlit
+
+Install all dependencies with:
+
+```
+pip install -r requirements.txt
+```
+
+---
+
+## 7. Project Structure
+
+```
+ai-based-astronomical-classifier/
+│
+├── src/
+│   ├── main.py            # Training script
+│   ├── streamlit.py       # Web UI
+│   ├── prepare_data.py    # Data preprocessing
+│   ├── prediction.py      # Inference utilities
+│   └── data_analysis.py   # Optional analysis tools
+│
+├── data/                  # Dataset files
+├── outputs/               # Trained model artifacts
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## 8. Features Used
+
+* u, g, r, i, z magnitudes
+* Derived color indices
+* Cleaned & normalized numeric attributes
+
+---
+
+## 9. Limitations
+
+* Photometric-only classification
+* Accuracy varies depending on dataset version
+* Additional tuning may improve results
+* No spectroscopic features included
+
+---
+
+## 10. Future Work
+
+* Integrating spectroscopic measurements
+* Trying XGBoost / LightGBM
+* Adding SHAP explainability
+* Deploying a public inference API
+* Enhanced preprocessing and feature engineering
+
+---
+
+## 11. License
+
+This project is licensed under the **MIT License**.
+See the `LICENSE` file for details.
+
+---
+
+## 12. Contact
+
+For inquiries: **[emrebas02@hotmail.com](mailto:emrebas02@hotmail.com)**
