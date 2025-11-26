@@ -6,7 +6,6 @@ It demonstrates how classical machine learning techniques can be applied to real
 
 The final Random Forest model achieves approximately **86% test accuracy**, which reflects realistic performance for photometric-only SDSS classification tasks.
 
----
 
 ## 1. Project Overview
 
@@ -21,7 +20,6 @@ The system includes:
 
 The main goal is to automate the classification of celestial objects using efficient and interpretable machine learning methods.
 
----
 
 ## 2. Motivation
 
@@ -36,7 +34,6 @@ Automated classification enables:
 
 This project shows that structured photometric data alone can be leveraged to build a reliable multi-class classifier using classical ML techniques.
 
----
 
 ## 3. Dataset
 
@@ -63,7 +60,6 @@ The dataset is derived from **SDSS DR17** photometric measurements and includes:
 * Label encoding
 * Stratified train–test split
 
----
 
 ## Dataset Download & Placement
 
@@ -82,7 +78,6 @@ Files include:
 
 Place them inside the project’s `data/` directory:
 
-```
 ai-based-astronomical-classifier/
 │
 ├── data/
@@ -96,7 +91,6 @@ ai-based-astronomical-classifier/
 
 The scripts automatically load data from this folder.
 
----
 
 ## 4. Methodology
 
@@ -132,7 +126,6 @@ All experiments were run on a held-out test set.
 
 A **Streamlit** interface allows manual input of photometric values for instant predictions.
 
----
 
 ## 5. Installation & Usage
 
@@ -180,7 +173,6 @@ Install all dependencies with:
 pip install -r requirements.txt
 ```
 
----
 
 ## 7. Project Structure
 
@@ -200,15 +192,12 @@ ai-based-astronomical-classifier/
 └── README.md
 ```
 
----
-
 ## 8. Features Used
 
 * u, g, r, i, z magnitudes
 * Derived color indices
 * Cleaned & normalized numeric attributes
 
----
 
 ## 9. Limitations
 
@@ -217,7 +206,6 @@ ai-based-astronomical-classifier/
 * Additional tuning may improve results
 * No spectroscopic features included
 
----
 
 ## 10. Future Work
 
@@ -227,14 +215,12 @@ ai-based-astronomical-classifier/
 * Deploying a public inference API
 * Enhanced preprocessing and feature engineering
 
----
 
 ## 11. License
 
 This project is licensed under the **MIT License**.
 See the `LICENSE` file for details.
 
----
 
 ## 12. Contact
 
