@@ -7,6 +7,7 @@ It demonstrates how classical machine learning techniques can be applied to real
 The final Random Forest model achieves approximately **86% test accuracy**, which reflects realistic performance for photometric-only SDSS classification tasks.
 
 
+
 ## 1. Project Overview
 
 This project builds an end-to-end pipeline for astronomical object classification.
@@ -21,6 +22,7 @@ The system includes:
 The main goal is to automate the classification of celestial objects using efficient and interpretable machine learning methods.
 
 
+
 ## 2. Motivation
 
 Astronomical surveys, including SDSS, produce massive amounts of observational data. Manual classification is no longer feasible due to scale.
@@ -33,6 +35,7 @@ Automated classification enables:
 * Reduced human workload
 
 This project shows that structured photometric data alone can be leveraged to build a reliable multi-class classifier using classical ML techniques.
+
 
 
 ## 3. Dataset
@@ -59,6 +62,7 @@ The dataset is derived from **SDSS DR17** photometric measurements and includes:
 * Feature scaling
 * Label encoding
 * Stratified train–test split
+
 
 
 ## 4. Methodology
@@ -95,6 +99,8 @@ All experiments were run on a held-out test set.
 
 A **Streamlit** interface allows manual input of photometric values for instant predictions.
 
+
+
 ## 5. Dataset Download & Placement
 
 ### Download
@@ -127,6 +133,7 @@ ai-based-astronomical-classifier/
 The scripts automatically load data from this folder.
 
 
+
 ## 6. Installation & Usage
 
 ### Clone the repository
@@ -156,6 +163,8 @@ streamlit run src/streamlit.py
 
 ---
 
+
+
 ## 7. Dependencies
 
 The project uses the following Python packages:
@@ -172,6 +181,7 @@ Install all dependencies with:
 ```
 pip install -r requirements.txt
 ```
+
 
 
 ## 8. Project Structure
@@ -192,11 +202,14 @@ ai-based-astronomical-classifier/
 └── README.md
 ```
 
+
+
 ## 9. Features Used
 
 * u, g, r, i, z magnitudes
 * Derived color indices
 * Cleaned & normalized numeric attributes
+
 
 
 ## 10. Limitations
@@ -205,6 +218,7 @@ ai-based-astronomical-classifier/
 * Accuracy varies depending on dataset version
 * Additional tuning may improve results
 * No spectroscopic features included
+
 
 
 ## 11. Future Work
@@ -216,10 +230,12 @@ ai-based-astronomical-classifier/
 * Enhanced preprocessing and feature engineering
 
 
+
 ## 12. License
 
 This project is licensed under the **MIT License**.
 See the `LICENSE` file for details.
+
 
 
 ## 13. Contact
