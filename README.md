@@ -78,6 +78,7 @@ Files include:
 
 Place them inside the project’s `data/` directory:
 
+```
 ai-based-astronomical-classifier/
 │
 ├── data/
